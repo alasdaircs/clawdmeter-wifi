@@ -3,7 +3,7 @@
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 
-#define DEVICE_NAME "Claude Controller"
+#define DEVICE_NAME "Clawdmeter"
 
 // HID keyboard report descriptor (standard 6-KRO boot-protocol-compatible).
 // Includes the LED output report (Num/Caps/Scroll Lock indicators) — without
