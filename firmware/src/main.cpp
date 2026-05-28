@@ -11,6 +11,8 @@
 #include "usage_rate.h"
 #include "idle.h"
 #include "idle_cfg.h"
+#include "provisioning.h"
+#include "wifi_poller.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -115,7 +117,7 @@ static bool parse_json(const char* json, UsageData* out) {
 }
 
 // ---- Serial command buffer ----
-#define CMD_BUF_SIZE 64
+#define CMD_BUF_SIZE 256
 static char cmd_buf[CMD_BUF_SIZE];
 static int cmd_pos = 0;
 
@@ -162,7 +164,10 @@ static void check_serial_cmd() {
         char c = Serial.read();
         if (c == '\n' || c == '\r') {
             cmd_buf[cmd_pos] = '\0';
-            if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
+            if (cmd_pos > 0) {
+                if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
+                else provisioning_handle_cmd(cmd_buf);
+            }
             cmd_pos = 0;
         } else if (cmd_pos < CMD_BUF_SIZE - 1) {
             cmd_buf[cmd_pos++] = c;
@@ -182,6 +187,7 @@ void setup() {
     Serial.println("{\"ready\":true}");
 
     board_init();
+    provisioning_init();
 
     display_hal_init();
     display_hal_begin();
@@ -214,6 +220,7 @@ void setup() {
 
     ble_init();
     input_hal_init();
+    wifi_poller_init();
 
     ui_init();
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
@@ -229,6 +236,7 @@ static ble_state_t last_ble_state = BLE_STATE_INIT;
 void loop() {
     idle_tick();
     lv_timer_handler();
+    wifi_poller_tick();
     ui_tick_anim();
     ble_tick();
     power_hal_tick();
