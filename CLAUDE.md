@@ -1,3 +1,12 @@
+> **Fork note:** This is [alasdaircs/clawdmeter-wifi](https://github.com/alasdaircs/clawdmeter-wifi),
+> a fork that replaces the host daemon + BLE data channel with Wi-Fi polling
+> directly from the ESP32. The device calls the Anthropic API itself over Wi-Fi —
+> no host PC, no daemon, no BLE data channel required.
+> See [WIFI_FORK.md](./WIFI_FORK.md) for full details of what changes and why.
+> The remainder of this file is the upstream context, unchanged.
+
+---
+
 # Project context
 
 ESP32-S3 firmware for a desk-side Claude Code usage monitor. Each supported
