@@ -9,8 +9,16 @@ enum screen_t {
     SCREEN_COUNT,
 };
 
+typedef enum {
+    UI_STATUS_NONE,
+    UI_STATUS_INFO,
+    UI_STATUS_WARN,
+    UI_STATUS_ERROR,
+} ui_status_level_t;
+
 void ui_init(void);
 void ui_update(const UsageData* data);
+void ui_set_status(ui_status_level_t level, const char* msg);
 void ui_tick_anim(void);
 void ui_show_screen(screen_t screen);
 void ui_cycle_screen(void);

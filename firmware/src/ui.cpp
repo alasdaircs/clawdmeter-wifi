@@ -111,6 +111,7 @@ static lv_obj_t* lbl_weekly_pct;
 static lv_obj_t* lbl_weekly_label;
 static lv_obj_t* lbl_weekly_reset;
 static lv_obj_t* lbl_anim;
+static lv_obj_t* lbl_status;
 
 // ---- Bluetooth screen widgets ----
 static lv_obj_t* ble_container;
@@ -330,6 +331,16 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_style_text_font(lbl_anim, &font_mono_32, 0);
     lv_obj_set_style_text_color(lbl_anim, COL_ACCENT, 0);
     lv_obj_align(lbl_anim, LV_ALIGN_BOTTOM_MID, 0, -15);
+
+    lbl_status = lv_label_create(usage_container);
+    lv_label_set_text(lbl_status, "");
+    lv_obj_set_style_text_font(lbl_status, &font_styrene_20, 0);
+    lv_obj_set_style_text_color(lbl_status, COL_DIM, 0);
+    lv_obj_set_style_text_align(lbl_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_status, L.content_w);
+    lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_WRAP);
+    lv_obj_align(lbl_status, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ======== Bluetooth Screen ========
@@ -470,6 +481,7 @@ void ui_update(const UsageData* data) {
 
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
+    if (lv_obj_has_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN)) return;
 
     uint32_t now = lv_tick_get();
 
@@ -549,6 +561,24 @@ void ui_toggle_splash(void) {
 
 screen_t ui_get_current_screen(void) {
     return current_screen;
+}
+
+void ui_set_status(ui_status_level_t level, const char* msg) {
+    if (!msg || msg[0] == '\0' || level == UI_STATUS_NONE) {
+        lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_color_t col;
+    switch (level) {
+        case UI_STATUS_ERROR: col = COL_RED;   break;
+        case UI_STATUS_WARN:  col = COL_AMBER; break;
+        default:              col = COL_DIM;   break;
+    }
+    lv_obj_set_style_text_color(lbl_status, col, 0);
+    lv_label_set_text(lbl_status, msg);
+    lv_obj_clear_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN);
 }
 
 void ui_update_ble_status(ble_state_t state, const char* name, const char* mac) {

@@ -209,8 +209,7 @@ void setup() {
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_show_screen(SCREEN_SPLASH);
 
-    Serial.printf("Dashboard ready (%s, %dx%d), waiting for data on BLE...\n",
-        board_caps().name, W, H);
+    Serial.printf("Dashboard ready (%s, %dx%d)\n", board_caps().name, W, H);
 }
 
 static ble_state_t last_ble_state = BLE_STATE_INIT;
@@ -305,6 +304,49 @@ void loop() {
             if (splash_is_active()) splash_pick_for_current_rate();
         }
         ui_update(&usage);
+    }
+
+    // Wifi status overlay — update whenever status or data-validity changes.
+    {
+        static wifi_poll_status_t last_ws   = WIFI_POLL_INIT;
+        static bool               ws_first  = true;
+        static bool               last_valid = false;
+        wifi_poll_status_t ws = wifi_poller_get_status();
+        if (ws_first || ws != last_ws || usage.valid != last_valid) {
+            ws_first   = false;
+            last_ws    = ws;
+            last_valid = usage.valid;
+            char msg[80] = {};
+            ui_status_level_t lvl = UI_STATUS_INFO;
+            switch (ws) {
+                case WIFI_POLL_NO_CREDS:
+                    strlcpy(msg, "Setup: ssid / pass via serial", sizeof(msg));
+                    lvl = UI_STATUS_WARN; break;
+                case WIFI_POLL_NO_TOKEN:
+                    strlcpy(msg, "Setup: token <sk-ant-...> via serial", sizeof(msg));
+                    lvl = UI_STATUS_WARN; break;
+                case WIFI_POLL_CONNECTING:
+                    strlcpy(msg, "Connecting to Wi-Fi\xE2\x80\xA6", sizeof(msg)); break;
+                case WIFI_POLL_WIFI_FAIL:
+                    strlcpy(msg, "Wi-Fi error \xE2\x80\x94 check credentials", sizeof(msg));
+                    lvl = UI_STATUS_ERROR; break;
+                case WIFI_POLL_TOKEN_INVALID:
+                    strlcpy(msg, "Token invalid \xE2\x80\x94 re-provision", sizeof(msg));
+                    lvl = UI_STATUS_ERROR; break;
+                case WIFI_POLL_API_ERROR: {
+                    int c = wifi_poller_get_last_http_code();
+                    if (c < 0) strlcpy(msg, "API unreachable", sizeof(msg));
+                    else        snprintf(msg, sizeof(msg), "API error %d", c);
+                    lvl = UI_STATUS_ERROR; break;
+                }
+                default: break;  // INIT, IDLE, OK — msg stays ""
+            }
+            // Keep overlay until first data arrives even if wifi status is OK/IDLE.
+            if (msg[0] == '\0' && !usage.valid) {
+                strlcpy(msg, "Connecting\xE2\x80\xA6", sizeof(msg));
+            }
+            ui_set_status(lvl, msg[0] ? msg : nullptr);
+        }
     }
 
     delay(5);

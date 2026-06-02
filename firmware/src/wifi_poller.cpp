@@ -32,19 +32,21 @@ enum wifi_state_t {
     WIFI_ST_FAILED,
 };
 
-static wifi_state_t s_state     = WIFI_ST_IDLE;
-static uint32_t     s_state_ts  = 0;
-static uint32_t     s_last_poll = 0;
+static wifi_state_t       s_state          = WIFI_ST_IDLE;
+static uint32_t           s_state_ts       = 0;
+static uint32_t           s_last_poll      = 0;
 
-static UsageData          s_data         = {};
-static volatile bool      s_has_new_data = false;
-static volatile bool      s_poll_busy    = false;
-static TaskHandle_t       s_poll_task    = nullptr;
-static SemaphoreHandle_t  s_mutex        = nullptr;
+static UsageData          s_data           = {};
+static volatile bool      s_has_new_data   = false;
+static volatile bool      s_poll_busy      = false;
+static bool               s_stop_polling   = false;
+static TaskHandle_t       s_poll_task      = nullptr;
+static SemaphoreHandle_t  s_mutex          = nullptr;
+static StackType_t*       s_poll_stack     = nullptr;
+static StaticTask_t       s_poll_tcb;
 
-// Task stack allocated from PSRAM at runtime — keeps SRAM free for TLS/DMA.
-static StackType_t* s_poll_stack = nullptr;
-static StaticTask_t s_poll_tcb;
+static wifi_poll_status_t s_status         = WIFI_POLL_INIT;
+static int                s_last_http_code = 0;
 
 // Route large mbedTLS allocations (SSL record buffers, handshake state) to PSRAM,
 // leaving internal SRAM free for the hardware AES engine's DMA descriptors.
@@ -62,13 +64,14 @@ static void begin_connect() {
     WiFi.begin(ssid.c_str(), provisioning_get_pass().c_str());
     s_state    = WIFI_ST_CONNECTING;
     s_state_ts = millis();
+    s_status   = WIFI_POLL_CONNECTING;
     Serial.printf("wifi: connecting to \"%s\"...\n", ssid.c_str());
 }
 
 static int unix_to_reset_mins(const String& ts_str) {
     if (ts_str.length() == 0) return -1;
     time_t now = time(nullptr);
-    if (now < 1000000000L) return -1;  // NTP not synced yet
+    if (now < 1000000000L) return -1;
     long ts = ts_str.toInt();
     if (ts <= 0) return -1;
     long diff = (long)ts - (long)now;
@@ -77,6 +80,7 @@ static int unix_to_reset_mins(const String& ts_str) {
 
 static void do_poll() {
     if (!provisioning_has_token()) {
+        s_status = WIFI_POLL_NO_TOKEN;
         Serial.println("wifi: no token, skipping poll");
         return;
     }
@@ -91,6 +95,8 @@ static void do_poll() {
     http.collectHeaders(POLL_HEADERS, POLL_HEADER_COUNT);
 
     if (!http.begin(tls, "https://" + String(API_HOST) + "/v1/messages")) {
+        s_status         = WIFI_POLL_API_ERROR;
+        s_last_http_code = -1;
         Serial.println("wifi: http.begin failed");
         return;
     }
@@ -122,6 +128,18 @@ static void do_poll() {
         s_data         = d;
         s_has_new_data = true;
         xSemaphoreGive(s_mutex);
+
+        s_status = WIFI_POLL_OK;
+
+    } else if (code == 401) {
+        s_status       = WIFI_POLL_TOKEN_INVALID;
+        s_stop_polling = true;
+        Serial.println("wifi: 401 — token invalid, polling stopped");
+
+    } else {
+        s_status         = WIFI_POLL_API_ERROR;
+        s_last_http_code = code;
+        Serial.printf("wifi: API error %d\n", code);
     }
 
     http.end();
@@ -141,7 +159,6 @@ void wifi_poller_init(void) {
 
     s_mutex = xSemaphoreCreateMutex();
 
-    // Allocate task stack from PSRAM so it doesn't fragment internal SRAM.
     s_poll_stack = (StackType_t*)heap_caps_malloc(12288, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_poll_stack) {
         Serial.println("wifi: PSRAM stack alloc failed, falling back to SRAM");
@@ -155,11 +172,10 @@ void wifi_poller_init(void) {
     );
 
     if (!provisioning_has_wifi()) {
+        s_status = WIFI_POLL_NO_CREDS;
         Serial.println("wifi: no credentials, skipping");
         return;
     }
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(false);
     begin_connect();
 }
 
@@ -172,7 +188,8 @@ void wifi_poller_tick(void) {
 
         case WIFI_ST_CONNECTING:
             if (WiFi.status() == WL_CONNECTED) {
-                s_state = WIFI_ST_CONNECTED;
+                s_state  = WIFI_ST_CONNECTED;
+                s_status = WIFI_POLL_IDLE;
                 Serial.printf("wifi: connected, IP=%s\n",
                     WiFi.localIP().toString().c_str());
                 configTime(0, 0, "pool.ntp.org");
@@ -180,6 +197,7 @@ void wifi_poller_tick(void) {
                 WiFi.disconnect();
                 s_state    = WIFI_ST_FAILED;
                 s_state_ts = now;
+                s_status   = WIFI_POLL_WIFI_FAIL;
                 Serial.printf("wifi: timeout (status=%d), retry in %us\n",
                     WiFi.status(), RETRY_INTERVAL_MS / 1000);
             }
@@ -189,8 +207,9 @@ void wifi_poller_tick(void) {
             if (WiFi.status() != WL_CONNECTED) {
                 s_state    = WIFI_ST_FAILED;
                 s_state_ts = now;
+                s_status   = WIFI_POLL_WIFI_FAIL;
                 Serial.println("wifi: lost connection, retry in 30s");
-            } else if (!s_poll_busy &&
+            } else if (!s_poll_busy && !s_stop_polling &&
                        (s_last_poll == 0 || now - s_last_poll >= POLL_INTERVAL_MS)) {
                 s_last_poll = now;
                 s_poll_busy = true;
@@ -223,3 +242,6 @@ void wifi_poller_consume_data(UsageData* out) {
     s_has_new_data = false;
     xSemaphoreGive(s_mutex);
 }
+
+wifi_poll_status_t wifi_poller_get_status(void) { return s_status; }
+int wifi_poller_get_last_http_code(void)         { return s_last_http_code; }
