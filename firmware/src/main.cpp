@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <lvgl.h>
-#include <ArduinoJson.h>
 #include <esp_heap_caps.h>
 
 #include "data.h"
@@ -97,24 +96,7 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
     }
 }
 
-// Parse a JSON line into UsageData.
-static bool parse_json(const char* json, UsageData* out) {
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, json);
-    if (err) {
-        Serial.printf("JSON parse error: %s\n", err.c_str());
-        return false;
-    }
 
-    out->session_pct = doc["s"] | 0.0f;
-    out->session_reset_mins = doc["sr"] | -1;
-    out->weekly_pct = doc["w"] | 0.0f;
-    out->weekly_reset_mins = doc["wr"] | -1;
-    strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
-    out->ok = doc["ok"] | false;
-    out->valid = true;
-    return true;
-}
 
 // ---- Serial command buffer ----
 #define CMD_BUF_SIZE 256
