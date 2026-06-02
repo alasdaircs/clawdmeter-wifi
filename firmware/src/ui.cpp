@@ -4,6 +4,7 @@
 #include "logo.h"
 #include "icons.h"
 #include "hal/board_caps.h"
+#include "provisioning.h"
 
 // Custom fonts (scaled for 314 PPI, ~1.9x from original 165 PPI)
 LV_FONT_DECLARE(font_tiempos_56);
@@ -41,6 +42,11 @@ struct Layout {
     const lv_font_t* bt_device_font;
     const lv_font_t* bt_credit_1_font;
     const lv_font_t* bt_credit_2_font;
+
+    // Wi-Fi screen
+    int16_t wifi_panel_h;
+    int16_t wifi_val_x;
+    int16_t wifi_row_h;
 };
 static Layout L = {};
 
@@ -68,6 +74,9 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_device_font   = &font_styrene_28;
         L.bt_credit_1_font = &font_styrene_24;
         L.bt_credit_2_font = &font_styrene_20;
+        L.wifi_panel_h     = 130;
+        L.wifi_val_x       = 110;
+        L.wifi_row_h       = 36;
     } else {
         // Compact layout — tuned for 368x448 (AMOLED-1.8).
         L.content_y = 85;
@@ -82,6 +91,9 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_device_font   = &font_styrene_20;
         L.bt_credit_1_font = &font_styrene_16;
         L.bt_credit_2_font = &font_styrene_14;
+        L.wifi_panel_h     = 110;
+        L.wifi_val_x       = 90;
+        L.wifi_row_h       = 30;
     }
 
     L.content_w = L.scr_w - 2 * L.margin;
@@ -118,6 +130,13 @@ static lv_obj_t* ble_container;
 static lv_obj_t* lbl_ble_status;
 static lv_obj_t* lbl_ble_device;
 static lv_obj_t* lbl_ble_mac;
+
+// ---- Wi-Fi screen widgets ----
+static lv_obj_t* wifi_container;
+static lv_obj_t* lbl_wifi_ssid_val;
+static lv_obj_t* lbl_wifi_pass_val;
+static lv_obj_t* lbl_wifi_token_val;
+static lv_obj_t* lbl_wifi_note;
 
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
@@ -343,6 +362,79 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
 }
 
+// ======== Wi-Fi Screen ========
+
+static void redact_password(const String& pass, char* buf, size_t len) {
+    if (pass.length() == 0)  { strlcpy(buf, "(none)", len); return; }
+    if (pass.length() == 1)  { strlcpy(buf, "\xE2\x80\xA2", len); return; }
+    if (pass.length() == 2)  { strlcpy(buf, "\xE2\x80\xA2\xE2\x80\xA2", len); return; }
+    snprintf(buf, len, "%c\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2%c",
+             pass[0], pass[pass.length() - 1]);
+}
+
+static void redact_token(const String& token, char* buf, size_t len) {
+    if (token.length() == 0)   { strlcpy(buf, "(none)", len); return; }
+    if (token.length() <= 20)  { strlcpy(buf, token.c_str(), len); return; }
+    snprintf(buf, len, "%.20s\xE2\x80\xA6", token.c_str());
+}
+
+static lv_obj_t* make_wifi_val_label(lv_obj_t* parent, int y) {
+    int val_w = L.content_w - 32 - L.wifi_val_x;
+    lv_obj_t* lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl, L.bt_device_font, 0);
+    lv_obj_set_style_text_color(lbl, COL_TEXT, 0);
+    lv_obj_set_width(lbl, val_w);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(lbl, "(none)");
+    lv_obj_set_pos(lbl, L.wifi_val_x, y);
+    return lbl;
+}
+
+static void init_wifi_screen(lv_obj_t* scr) {
+    wifi_container = lv_obj_create(scr);
+    lv_obj_set_size(wifi_container, L.scr_w, L.scr_h);
+    lv_obj_set_pos(wifi_container, 0, 0);
+    lv_obj_set_style_bg_opa(wifi_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wifi_container, 0, 0);
+    lv_obj_set_style_pad_all(wifi_container, 0, 0);
+    lv_obj_clear_flag(wifi_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(wifi_container, global_click_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* lbl_title = lv_label_create(wifi_container);
+    lv_label_set_text(lbl_title, "Wi-Fi");
+    lv_obj_set_style_text_font(lbl_title, L.bt_title_font, 0);
+    lv_obj_set_style_text_color(lbl_title, COL_TEXT, 0);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 16, L.title_y);
+
+    lv_obj_t* p = make_panel(wifi_container, L.margin, L.content_y,
+                             L.content_w, L.wifi_panel_h);
+
+    static const char* const keys[] = { "Network", "Password", "Token" };
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t* k = lv_label_create(p);
+        lv_label_set_text(k, keys[i]);
+        lv_obj_set_style_text_font(k, L.bt_device_font, 0);
+        lv_obj_set_style_text_color(k, COL_DIM, 0);
+        lv_obj_set_pos(k, 0, i * L.wifi_row_h);
+    }
+
+    lbl_wifi_ssid_val  = make_wifi_val_label(p, 0);
+    lbl_wifi_pass_val  = make_wifi_val_label(p, L.wifi_row_h);
+    lbl_wifi_token_val = make_wifi_val_label(p, 2 * L.wifi_row_h);
+
+    int note_y = L.content_y + L.wifi_panel_h + 20;
+    lbl_wifi_note = lv_label_create(wifi_container);
+    lv_obj_set_style_text_font(lbl_wifi_note, L.bt_credit_1_font, 0);
+    lv_obj_set_style_text_color(lbl_wifi_note, COL_DIM, 0);
+    lv_obj_set_style_text_align(lbl_wifi_note, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_wifi_note, L.content_w);
+    lv_label_set_long_mode(lbl_wifi_note, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_wifi_note, "Configure via serial at 115200 baud");
+    lv_obj_set_pos(lbl_wifi_note, L.margin, note_y);
+
+    lv_obj_add_flag(wifi_container, LV_OBJ_FLAG_HIDDEN);
+}
+
 // ======== Bluetooth Screen ========
 
 static void init_bluetooth_screen(lv_obj_t* scr) {
@@ -442,6 +534,7 @@ void ui_init(void) {
 
     init_usage_screen(scr);
     init_bluetooth_screen(scr);
+    init_wifi_screen(scr);
     splash_init(scr);
 
     if (splash_get_root()) {
@@ -525,12 +618,14 @@ static void ble_reset_click_cb(lv_event_t* e) {
 void ui_show_screen(screen_t screen) {
     lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(wifi_container, LV_OBJ_FLAG_HIDDEN);
     splash_hide();
 
     switch (screen) {
     case SCREEN_SPLASH:     splash_show(); break;
     case SCREEN_USAGE:      lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN); break;
     case SCREEN_BLUETOOTH:  lv_obj_clear_flag(ble_container, LV_OBJ_FLAG_HIDDEN); break;
+    case SCREEN_WIFI:       lv_obj_clear_flag(wifi_container, LV_OBJ_FLAG_HIDDEN); break;
     default: break;
     }
 
@@ -548,7 +643,8 @@ void ui_cycle_screen(void) {
     screen_t next;
     switch (current_screen) {
     case SCREEN_USAGE:     next = SCREEN_BLUETOOTH; break;
-    case SCREEN_BLUETOOTH: next = SCREEN_USAGE;     break;
+    case SCREEN_BLUETOOTH: next = SCREEN_WIFI;      break;
+    case SCREEN_WIFI:      next = SCREEN_USAGE;     break;
     default:               next = SCREEN_USAGE;     break;
     }
     ui_show_screen(next);
@@ -579,6 +675,25 @@ void ui_set_status(ui_status_level_t level, const char* msg) {
     lv_label_set_text(lbl_status, msg);
     lv_obj_clear_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_update_wifi_creds(bool portal_active) {
+    String ssid  = provisioning_get_ssid();
+    String pass  = provisioning_get_pass();
+    String token = provisioning_get_token();
+
+    lv_label_set_text(lbl_wifi_ssid_val, ssid.length() ? ssid.c_str() : "(none)");
+
+    char buf[32];
+    redact_password(pass, buf, sizeof(buf));
+    lv_label_set_text(lbl_wifi_pass_val, buf);
+
+    redact_token(token, buf, sizeof(buf));
+    lv_label_set_text(lbl_wifi_token_val, buf);
+
+    lv_label_set_text(lbl_wifi_note, portal_active
+        ? "Join Wi-Fi: ClawdMeter\nthen open 192.168.4.1"
+        : "Configure via serial at 115200 baud");
 }
 
 void ui_update_ble_status(ble_state_t state, const char* name, const char* mac) {

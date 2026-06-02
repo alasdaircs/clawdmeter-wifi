@@ -12,6 +12,7 @@
 #include "idle_cfg.h"
 #include "provisioning.h"
 #include "wifi_poller.h"
+#include "captive_portal.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -203,10 +204,12 @@ void setup() {
     ble_init();
     input_hal_init();
     wifi_poller_init();
+    captive_portal_init();
 
     ui_init();
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
+    ui_update_wifi_creds(captive_portal_is_active());
     ui_show_screen(SCREEN_SPLASH);
 
     Serial.printf("Dashboard ready (%s, %dx%d)\n", board_caps().name, W, H);
@@ -218,6 +221,7 @@ void loop() {
     idle_tick();
     lv_timer_handler();
     wifi_poller_tick();
+    captive_portal_tick();
     ui_tick_anim();
     ble_tick();
     power_hal_tick();
@@ -320,7 +324,10 @@ void loop() {
             ui_status_level_t lvl = UI_STATUS_INFO;
             switch (ws) {
                 case WIFI_POLL_NO_CREDS:
-                    strlcpy(msg, "Setup: ssid / pass via serial", sizeof(msg));
+                    if (captive_portal_is_active())
+                        strlcpy(msg, "Join Wi-Fi: ClawdMeter\nthen open 192.168.4.1", sizeof(msg));
+                    else
+                        strlcpy(msg, "Setup: ssid / pass via serial", sizeof(msg));
                     lvl = UI_STATUS_WARN; break;
                 case WIFI_POLL_NO_TOKEN:
                     strlcpy(msg, "Setup: token <sk-ant-...> via serial", sizeof(msg));
