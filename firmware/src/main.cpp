@@ -312,21 +312,17 @@ void loop() {
 
     check_serial_cmd();
 
-    if (ble_has_data()) {
-        if (parse_json(ble_get_data(), &usage)) {
-            int g_before = usage_rate_group();
-            usage_rate_sample(usage.session_pct);
-            int g_after = usage_rate_group();
-            if (g_after != g_before) {
-                Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
-                    g_before, g_after, usage.session_pct);
-                if (splash_is_active()) splash_pick_for_current_rate();
-            }
-            ui_update(&usage);
-            ble_send_ack();
-        } else {
-            ble_send_nack();
+    if (wifi_poller_has_new_data()) {
+        wifi_poller_consume_data(&usage);
+        int g_before = usage_rate_group();
+        usage_rate_sample(usage.session_pct);
+        int g_after = usage_rate_group();
+        if (g_after != g_before) {
+            Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
+                g_before, g_after, usage.session_pct);
+            if (splash_is_active()) splash_pick_for_current_rate();
         }
+        ui_update(&usage);
     }
 
     delay(5);
