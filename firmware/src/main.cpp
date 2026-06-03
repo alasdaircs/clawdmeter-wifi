@@ -210,7 +210,12 @@ void setup() {
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_update_wifi_creds(captive_portal_is_active());
-    ui_show_screen(SCREEN_SPLASH);
+    if (captive_portal_is_active()) {
+        ui_set_nav_locked(true);
+        ui_show_screen(SCREEN_WIFI);
+    } else {
+        ui_show_screen(SCREEN_SPLASH);
+    }
 
     Serial.printf("Dashboard ready (%s, %dx%d)\n", board_caps().name, W, H);
 }
@@ -304,6 +309,8 @@ void loop() {
             wifi_poller_stop();
             captive_portal_start();
             ui_update_wifi_creds(true);
+            ui_set_nav_locked(true);
+            ui_show_screen(SCREEN_WIFI);
         }
     }
 

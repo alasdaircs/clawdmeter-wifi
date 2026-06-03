@@ -228,6 +228,7 @@ static void ble_reset_click_cb(lv_event_t* e);
 static void wifi_hotspot_click_cb(lv_event_t* e);
 
 static bool s_hotspot_requested = false;
+static bool s_nav_locked        = false;
 
 static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_t* panel = lv_obj_create(parent);
@@ -631,6 +632,7 @@ static void apply_battery_visibility(void) {
 
 static void global_click_cb(lv_event_t* e) {
     (void)e;
+    if (s_nav_locked) return;
     if (current_screen == SCREEN_SPLASH) ui_show_screen(prev_non_splash_screen);
     else                                  ui_show_screen(SCREEN_SPLASH);
 }
@@ -675,7 +677,10 @@ void ui_show_screen(screen_t screen) {
     apply_battery_visibility();
 }
 
+void ui_set_nav_locked(bool locked) { s_nav_locked = locked; }
+
 void ui_cycle_screen(void) {
+    if (s_nav_locked) return;
     screen_t next;
     switch (current_screen) {
     case SCREEN_USAGE:     next = SCREEN_BLUETOOTH; break;
