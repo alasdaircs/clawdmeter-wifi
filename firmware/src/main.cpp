@@ -295,6 +295,18 @@ void loop() {
         ui_update_battery(pct, charging);
     }
 
+    // Start hotspot: manual button on Wi-Fi screen, or 3 successive connect failures.
+    if (!captive_portal_is_active()) {
+        bool manual = ui_hotspot_requested();
+        bool auto_fail = (wifi_poller_get_fail_count() >= 3);
+        if (manual || auto_fail) {
+            if (auto_fail) Serial.println("wifi: 3 failures, switching to hotspot");
+            wifi_poller_stop();
+            captive_portal_start();
+            ui_update_wifi_creds(true);
+        }
+    }
+
     check_serial_cmd();
 
     if (wifi_poller_has_new_data()) {

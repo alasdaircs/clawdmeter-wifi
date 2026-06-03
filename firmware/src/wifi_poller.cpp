@@ -47,6 +47,7 @@ static StaticTask_t       s_poll_tcb;
 
 static wifi_poll_status_t s_status         = WIFI_POLL_INIT;
 static int                s_last_http_code = 0;
+static int                s_fail_count     = 0;  // successive connection timeouts
 
 // Route large mbedTLS allocations (SSL record buffers, handshake state) to PSRAM,
 // leaving internal SRAM free for the hardware AES engine's DMA descriptors.
@@ -188,8 +189,9 @@ void wifi_poller_tick(void) {
 
         case WIFI_ST_CONNECTING:
             if (WiFi.status() == WL_CONNECTED) {
-                s_state  = WIFI_ST_CONNECTED;
-                s_status = WIFI_POLL_IDLE;
+                s_state      = WIFI_ST_CONNECTED;
+                s_status     = WIFI_POLL_IDLE;
+                s_fail_count = 0;
                 Serial.printf("wifi: connected, IP=%s\n",
                     WiFi.localIP().toString().c_str());
                 configTime(0, 0, "pool.ntp.org");
@@ -198,8 +200,9 @@ void wifi_poller_tick(void) {
                 s_state    = WIFI_ST_FAILED;
                 s_state_ts = now;
                 s_status   = WIFI_POLL_WIFI_FAIL;
-                Serial.printf("wifi: timeout (status=%d), retry in %us\n",
-                    WiFi.status(), RETRY_INTERVAL_MS / 1000);
+                s_fail_count++;
+                Serial.printf("wifi: timeout (status=%d), fail #%d, retry in %us\n",
+                    WiFi.status(), s_fail_count, RETRY_INTERVAL_MS / 1000);
             }
             break;
 
@@ -243,5 +246,15 @@ void wifi_poller_consume_data(UsageData* out) {
     xSemaphoreGive(s_mutex);
 }
 
-wifi_poll_status_t wifi_poller_get_status(void) { return s_status; }
-int wifi_poller_get_last_http_code(void)         { return s_last_http_code; }
+wifi_poll_status_t wifi_poller_get_status(void)    { return s_status; }
+int wifi_poller_get_last_http_code(void)           { return s_last_http_code; }
+int wifi_poller_get_fail_count(void)               { return s_fail_count; }
+
+void wifi_poller_stop(void) {
+    s_state        = WIFI_ST_IDLE;
+    s_status       = WIFI_POLL_NO_CREDS;
+    s_stop_polling = true;
+    s_fail_count   = 0;
+    WiFi.disconnect();
+    Serial.println("wifi: stopped");
+}

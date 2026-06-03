@@ -20,3 +20,5 @@ bool wifi_poller_has_new_data(void);
 void wifi_poller_consume_data(UsageData* out);
 wifi_poll_status_t wifi_poller_get_status(void);
 int wifi_poller_get_last_http_code(void);
+int wifi_poller_get_fail_count(void);
+void wifi_poller_stop(void);

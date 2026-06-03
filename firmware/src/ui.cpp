@@ -47,6 +47,7 @@ struct Layout {
     int16_t wifi_panel_h;
     int16_t wifi_val_x;
     int16_t wifi_row_h;
+    int16_t wifi_btn_h;
 };
 static Layout L = {};
 
@@ -77,6 +78,7 @@ static void compute_layout(const BoardCaps& c) {
         L.wifi_panel_h     = 130;
         L.wifi_val_x       = 110;
         L.wifi_row_h       = 36;
+        L.wifi_btn_h       = 70;
     } else {
         // Compact layout — tuned for 368x448 (AMOLED-1.8).
         L.content_y = 85;
@@ -94,6 +96,7 @@ static void compute_layout(const BoardCaps& c) {
         L.wifi_panel_h     = 110;
         L.wifi_val_x       = 90;
         L.wifi_row_h       = 30;
+        L.wifi_btn_h       = 56;
     }
 
     L.content_w = L.scr_w - 2 * L.margin;
@@ -222,6 +225,9 @@ static void format_reset_time(int mins, char* buf, size_t len) {
 // Forward decls — callbacks defined near ui_show_screen below
 static void global_click_cb(lv_event_t* e);
 static void ble_reset_click_cb(lv_event_t* e);
+static void wifi_hotspot_click_cb(lv_event_t* e);
+
+static bool s_hotspot_requested = false;
 
 static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_t* panel = lv_obj_create(parent);
@@ -422,7 +428,26 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lbl_wifi_pass_val  = make_wifi_val_label(p, L.wifi_row_h);
     lbl_wifi_token_val = make_wifi_val_label(p, 2 * L.wifi_row_h);
 
-    int note_y = L.content_y + L.wifi_panel_h + 20;
+    int btn_y  = L.content_y + L.wifi_panel_h + 16;
+    int note_y = btn_y + L.wifi_btn_h + 12;
+
+    lv_obj_t* btn_zone = lv_obj_create(wifi_container);
+    lv_obj_set_pos(btn_zone, L.margin, btn_y);
+    lv_obj_set_size(btn_zone, L.content_w, L.wifi_btn_h);
+    lv_obj_set_style_bg_color(btn_zone, COL_PANEL, 0);
+    lv_obj_set_style_bg_opa(btn_zone, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn_zone, 8, 0);
+    lv_obj_set_style_border_width(btn_zone, 0, 0);
+    lv_obj_set_flex_flow(btn_zone, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_zone, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(btn_zone, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(btn_zone, wifi_hotspot_click_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* btn_lbl = lv_label_create(btn_zone);
+    lv_label_set_text(btn_lbl, "Start Hotspot");
+    lv_obj_set_style_text_font(btn_lbl, L.bt_device_font, 0);
+    lv_obj_set_style_text_color(btn_lbl, COL_AMBER, 0);
+
     lbl_wifi_note = lv_label_create(wifi_container);
     lv_obj_set_style_text_font(lbl_wifi_note, L.bt_credit_1_font, 0);
     lv_obj_set_style_text_color(lbl_wifi_note, COL_DIM, 0);
@@ -613,6 +638,17 @@ static void global_click_cb(lv_event_t* e) {
 static void ble_reset_click_cb(lv_event_t* e) {
     (void)e;
     ble_clear_bonds();
+}
+
+static void wifi_hotspot_click_cb(lv_event_t* e) {
+    (void)e;
+    s_hotspot_requested = true;
+}
+
+bool ui_hotspot_requested(void) {
+    if (!s_hotspot_requested) return false;
+    s_hotspot_requested = false;
+    return true;
 }
 
 void ui_show_screen(screen_t screen) {

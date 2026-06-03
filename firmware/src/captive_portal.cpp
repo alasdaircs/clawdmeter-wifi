@@ -81,8 +81,8 @@ static void handle_save() {
     ESP.restart();
 }
 
-void captive_portal_init(void) {
-    if (provisioning_has_wifi()) return;
+void captive_portal_start(void) {
+    if (s_active) return;
     s_active = true;
 
     WiFi.mode(WIFI_AP);
@@ -104,6 +104,10 @@ void captive_portal_init(void) {
     s_server.on("/hotspot-detect.html", HTTP_GET, handle_root);
     s_server.onNotFound(handle_root);
     s_server.begin();
+}
+
+void captive_portal_init(void) {
+    if (!provisioning_has_wifi()) captive_portal_start();
 }
 
 void captive_portal_tick(void) {
