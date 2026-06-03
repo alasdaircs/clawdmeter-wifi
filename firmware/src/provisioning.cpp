@@ -108,3 +108,19 @@ String provisioning_get_token(void) {
     xSemaphoreGive(s_mutex);
     return r;
 }
+
+void provisioning_save_wifi(const char* ssid, const char* pass, const char* token) {
+    Preferences prefs;
+    prefs.begin(NVS_NS, false);
+    prefs.putString("ssid", ssid);
+    prefs.putString("pass", pass);
+    if (token && *token) prefs.putString("token", token);
+    prefs.end();
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    s_ssid = ssid;
+    s_pass = pass;
+    if (token && *token) s_token = token;
+    xSemaphoreGive(s_mutex);
+    Serial.printf("prov: saved ssid=%s pass=*** token=%s\n",
+        ssid, (token && *token) ? "set" : "unchanged");
+}

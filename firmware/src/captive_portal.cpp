@@ -57,6 +57,23 @@ static const char SAVED_HTML[] = R"html(<!DOCTYPE html>
 <p>You can close this page.</p>
 </body></html>)html";
 
+static void send_form_error(const char* msg) {
+    String html =
+        "<!DOCTYPE html><html><head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Error</title>"
+        "<style>body{font-family:sans-serif;max-width:480px;margin:60px auto;"
+        "padding:0 20px;background:#1a1a1a;color:#e8e0d4}"
+        "h1{color:#d97757}p{color:#aaa}"
+        "a{display:block;margin-top:24px;color:#d97757}</style>"
+        "</head><body>"
+        "<h1>Setup error</h1><p>";
+    html += msg;
+    html += "</p><a href='/'>&#8592; Back</a></body></html>";
+    s_server.send(400, "text/html", html);
+}
+
 static void handle_root() {
     s_server.send(200, "text/html", PORTAL_HTML);
 }
@@ -67,14 +84,21 @@ static void handle_save() {
     String token = s_server.hasArg("token") ? s_server.arg("token") : "";
 
     if (ssid.length() == 0 || pass.length() == 0) {
-        s_server.send(200, "text/html", PORTAL_HTML);
+        send_form_error("Wi-Fi network name and password are required.");
         return;
     }
 
-    provisioning_handle_cmd(("ssid " + ssid).c_str());
-    provisioning_handle_cmd(("pass " + pass).c_str());
-    if (token.length() > 0)
-        provisioning_handle_cmd(("token " + token).c_str());
+    if (token.length() > 0 && !token.startsWith("sk-ant-")) {
+        send_form_error("Token does not look like an Anthropic OAuth token "
+                        "(expected sk-ant-&#8230;). Check and try again, "
+                        "or leave it empty to add later via serial.");
+        return;
+    }
+
+    // Write all three keys in one NVS transaction — avoids partial credential
+    // state if power is lost between individual writes.
+    provisioning_save_wifi(ssid.c_str(), pass.c_str(),
+                           token.length() > 0 ? token.c_str() : nullptr);
 
     s_server.send(200, "text/html", SAVED_HTML);
     delay(1500);
