@@ -76,7 +76,7 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_credit_1_font = &font_styrene_24;
         L.bt_credit_2_font = &font_styrene_20;
         L.wifi_panel_h     = 130;
-        L.wifi_val_x       = 110;
+        L.wifi_val_x       = 85;
         L.wifi_row_h       = 36;
         L.wifi_btn_h       = 70;
     } else {
@@ -94,7 +94,7 @@ static void compute_layout(const BoardCaps& c) {
         L.bt_credit_1_font = &font_styrene_16;
         L.bt_credit_2_font = &font_styrene_14;
         L.wifi_panel_h     = 110;
-        L.wifi_val_x       = 90;
+        L.wifi_val_x       = 70;
         L.wifi_row_h       = 30;
         L.wifi_btn_h       = 56;
     }
@@ -416,7 +416,7 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lv_obj_t* p = make_panel(wifi_container, L.margin, L.content_y,
                              L.content_w, L.wifi_panel_h);
 
-    static const char* const keys[] = { "Network", "Password", "Token" };
+    static const char* const keys[] = { "SSID", "Pass", "Token" };
     for (int i = 0; i < 3; i++) {
         lv_obj_t* k = lv_label_create(p);
         lv_label_set_text(k, keys[i]);
