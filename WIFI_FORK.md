@@ -97,11 +97,22 @@ re-provisioned (no point hammering with a known-bad token).
 
 ## TLS / memory
 
-`WiFiClientSecure` with `setCACert()` verifies the server against the **GTS Root R4**
-certificate (Google Trust Services), which is the trust anchor for `api.anthropic.com`'s
-certificate chain (leaf → GTS WE1 → GTS Root R4 cross-cert → GlobalSign Root CA).
-The PEM is embedded in `wifi_poller.cpp` and expires **2028-01-28** — reflash before
-then. Chain: `api.anthropic.com` ← GTS WE1 ← GTS Root R4 ← GlobalSign Root CA.
+`WiFiClientSecure` with `setCACert()` verifies the server against two embedded
+**GTS Root R4** certificates (Google Trust Services). There are two distinct GTS Root R4
+key pairs in circulation:
+
+- **K1** — self-signed original, distributed in OS trust stores. Expires **2036-06-22**.
+- **K2** — cross-certified by GlobalSign Root CA, sent by the server in its chain.
+  Expires **2028-01-28**.
+
+Both are concatenated in `GTS_ROOT_R4_CA[]` in `wifi_poller.cpp`. mbedTLS tries each
+trust anchor in turn so the correct one is used regardless of which key signed the WE1
+intermediate. Verified working on device (HTTP 200).
+
+Chain sent by server: `api.anthropic.com` ← GTS WE1 ← GTS Root R4 (K2) ← GlobalSign Root CA.
+Chain used by OS clients: `api.anthropic.com` ← GTS WE1 ← GTS Root R4 (K1).
+
+**Action required before 2028-01-28:** re-extract K2 from the server chain and reflash.
 
 **Critical:** NimBLE + HTTPS together exhaust internal SRAM. Fix applied in
 `wifi_poller.cpp`:
