@@ -7,7 +7,7 @@
 
 A small ESP32 dashboard for your desk that tracks Claude Code usage in real time.
 It runs on a [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)
-and the splash screen plays pixel-art Clawd animations that get busier as your usage climbs.
+(480×480 square) and the splash screen plays pixel-art Clawd animations that get busier as your usage climbs.
 The two side buttons send Space and Shift+Tab over BLE HID for Claude Code's voice mode
 and mode-toggle shortcuts.
 
@@ -35,10 +35,13 @@ poll arrives.
 
 ## Hardware
 
-[Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)
+| Board | Status |
+|---|---|
+| [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm) (480×480) | ✅ Tested |
+| [Waveshare ESP32-S3-Touch-AMOLED-1.8](https://www.waveshare.com/esp32-s3-touch-amoled-1.8.htm) (368×448) | 🧪 Builds; awaiting community test |
 
-> This fork targets the 2.16" board only. For the upstream multi-board version with the
-> host daemon, see [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter).
+> For the upstream multi-board version with the host daemon, see
+> [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter).
 
 ## Prerequisites
 
@@ -60,6 +63,8 @@ $env:PYTHONUTF8=1; pio run -d firmware -e waveshare_amoled_216 -t upload --uploa
 ```bash
 pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port /dev/cu.usbmodem101
 ```
+
+Replace `waveshare_amoled_216` with `waveshare_amoled_18` for the 1.8" board.
 
 Close any serial monitor (PuTTY, etc.) before flashing — the port must be free.
 
