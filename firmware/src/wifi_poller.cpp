@@ -86,16 +86,16 @@ static uint32_t           s_last_poll      = 0;
 
 static UsageData          s_data           = {};
 static volatile bool      s_has_new_data   = false;
-static volatile bool      s_poll_busy      = false;
-static bool               s_stop_polling   = false;
-static TaskHandle_t       s_poll_task      = nullptr;
-static SemaphoreHandle_t  s_mutex          = nullptr;
-static StackType_t*       s_poll_stack     = nullptr;
-static StaticTask_t       s_poll_tcb;
+static volatile bool               s_poll_busy      = false;
+static volatile bool               s_stop_polling   = false;
+static TaskHandle_t                s_poll_task      = nullptr;
+static SemaphoreHandle_t           s_mutex          = nullptr;
+static StackType_t*                s_poll_stack     = nullptr;
+static StaticTask_t                s_poll_tcb;
 
-static wifi_poll_status_t s_status         = WIFI_POLL_INIT;
-static int                s_last_http_code = 0;
-static int                s_fail_count     = 0;  // successive connection timeouts
+static volatile wifi_poll_status_t s_status         = WIFI_POLL_INIT;
+static volatile int                s_last_http_code = 0;
+static int                         s_fail_count     = 0;  // Core 1 only
 
 // Route large mbedTLS allocations (SSL record buffers, handshake state) to PSRAM,
 // leaving internal SRAM free for the hardware AES engine's DMA descriptors.
@@ -299,10 +299,16 @@ int wifi_poller_get_last_http_code(void)           { return s_last_http_code; }
 int wifi_poller_get_fail_count(void)               { return s_fail_count; }
 
 void wifi_poller_stop(void) {
-    s_state        = WIFI_ST_IDLE;
-    s_status       = WIFI_POLL_NO_CREDS;
     s_stop_polling = true;
-    s_fail_count   = 0;
+    s_state        = WIFI_ST_IDLE;
+    // Wait for any in-flight HTTP request to finish before disconnecting WiFi.
+    // The caller (main.cpp) immediately calls captive_portal_start() →
+    // WiFi.mode(WIFI_AP), which tears down the station interface. Racing that
+    // call against an active TLS socket can assert in the WiFi driver.
+    for (uint32_t t0 = millis(); s_poll_busy && millis() - t0 < HTTP_TIMEOUT_MS + 500;)
+        vTaskDelay(pdMS_TO_TICKS(20));
+    s_status     = WIFI_POLL_NO_CREDS;
+    s_fail_count = 0;
     WiFi.disconnect();
     Serial.println("wifi: stopped");
 }

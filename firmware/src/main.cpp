@@ -149,7 +149,10 @@ static void check_serial_cmd() {
             cmd_buf[cmd_pos] = '\0';
             if (cmd_pos > 0) {
                 if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
-                else provisioning_handle_cmd(cmd_buf);
+                else {
+                    provisioning_handle_cmd(cmd_buf);
+                    ui_update_wifi_creds(captive_portal_is_active());
+                }
             }
             cmd_pos = 0;
         } else if (cmd_pos < CMD_BUF_SIZE - 1) {
