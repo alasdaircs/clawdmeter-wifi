@@ -9,6 +9,14 @@ data channel required. The BLE HID keyboard (physical buttons) is kept unchanged
 
 ---
 
+## What is intentionally kept from upstream
+
+The `daemon/` folder (host-side Bash daemon + systemd unit) is **retained but unused**.
+The fork deliberately avoids deleting it to keep rebasing against upstream straightforward.
+Ignore it — nothing in the firmware or build system references it.
+
+---
+
 ## What changes vs upstream
 
 | Concern | Upstream | This fork |
