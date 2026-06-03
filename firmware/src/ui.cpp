@@ -372,17 +372,16 @@ static void init_usage_screen(lv_obj_t* scr) {
 // ======== Wi-Fi Screen ========
 
 static void redact_password(const String& pass, char* buf, size_t len) {
-    if (pass.length() == 0)  { strlcpy(buf, "(none)", len); return; }
-    if (pass.length() == 1)  { strlcpy(buf, "\xE2\x80\xA2", len); return; }
-    if (pass.length() == 2)  { strlcpy(buf, "\xE2\x80\xA2\xE2\x80\xA2", len); return; }
-    snprintf(buf, len, "%c\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2%c",
-             pass[0], pass[pass.length() - 1]);
+    if (pass.length() == 0) { strlcpy(buf, "(none)", len); return; }
+    if (pass.length() == 1) { strlcpy(buf, "*", len); return; }
+    if (pass.length() == 2) { strlcpy(buf, "**", len); return; }
+    snprintf(buf, len, "%c***%c", pass[0], pass[pass.length() - 1]);
 }
 
 static void redact_token(const String& token, char* buf, size_t len) {
     if (token.length() == 0)   { strlcpy(buf, "(none)", len); return; }
-    if (token.length() <= 20)  { strlcpy(buf, token.c_str(), len); return; }
-    snprintf(buf, len, "%.20s\xE2\x80\xA6", token.c_str());
+    if (token.length() <= 14)  { strlcpy(buf, token.c_str(), len); return; }
+    snprintf(buf, len, "%.14s...", token.c_str());
 }
 
 static lv_obj_t* make_wifi_val_label(lv_obj_t* parent, int y) {
@@ -390,8 +389,9 @@ static lv_obj_t* make_wifi_val_label(lv_obj_t* parent, int y) {
     lv_obj_t* lbl = lv_label_create(parent);
     lv_obj_set_style_text_font(lbl, L.bt_device_font, 0);
     lv_obj_set_style_text_color(lbl, COL_TEXT, 0);
-    lv_obj_set_width(lbl, val_w);
-    lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+    // Fixed size + CLIP enforces single-line; text is pre-truncated in software.
+    lv_obj_set_size(lbl, val_w, L.wifi_row_h);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
     lv_label_set_text(lbl, "(none)");
     lv_obj_set_pos(lbl, L.wifi_val_x, y);
     return lbl;
@@ -723,7 +723,11 @@ void ui_update_wifi_creds(bool portal_active) {
     String pass  = provisioning_get_pass();
     String token = provisioning_get_token();
 
-    lv_label_set_text(lbl_wifi_ssid_val, ssid.length() ? ssid.c_str() : "(none)");
+    char ssid_buf[20];
+    if (ssid.length() == 0)       strlcpy(ssid_buf, "(none)", sizeof(ssid_buf));
+    else if (ssid.length() <= 16) strlcpy(ssid_buf, ssid.c_str(), sizeof(ssid_buf));
+    else                          snprintf(ssid_buf, sizeof(ssid_buf), "%.13s...", ssid.c_str());
+    lv_label_set_text(lbl_wifi_ssid_val, ssid_buf);
 
     char buf[32];
     redact_password(pass, buf, sizeof(buf));
