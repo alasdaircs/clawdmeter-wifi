@@ -97,8 +97,11 @@ re-provisioned (no point hammering with a known-bad token).
 
 ## TLS / memory
 
-`WiFiClientSecure` with `setInsecure()` is used (no cert pinning). Acceptable for a
-personal desk device with no sensitive data flowing back from the API.
+`WiFiClientSecure` with `setCACert()` verifies the server against the **GTS Root R4**
+certificate (Google Trust Services), which is the trust anchor for `api.anthropic.com`'s
+certificate chain (leaf → GTS WE1 → GTS Root R4 cross-cert → GlobalSign Root CA).
+The PEM is embedded in `wifi_poller.cpp` and expires **2028-01-28** — reflash before
+then. Chain: `api.anthropic.com` ← GTS WE1 ← GTS Root R4 ← GlobalSign Root CA.
 
 **Critical:** NimBLE + HTTPS together exhaust internal SRAM. Fix applied in
 `wifi_poller.cpp`:
