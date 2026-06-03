@@ -342,12 +342,6 @@ void loop() {
             char msg[80] = {};
             ui_status_level_t lvl = UI_STATUS_INFO;
             switch (ws) {
-                case WIFI_POLL_NO_CREDS:
-                    if (captive_portal_is_active())
-                        strlcpy(msg, "Join Wi-Fi: ClawdMeter\nthen open 192.168.4.1", sizeof(msg));
-                    else
-                        strlcpy(msg, "Setup: ssid / pass via serial", sizeof(msg));
-                    lvl = UI_STATUS_WARN; break;
                 case WIFI_POLL_NO_TOKEN:
                     strlcpy(msg, "Setup: token <sk-ant-...> via serial", sizeof(msg));
                     lvl = UI_STATUS_WARN; break;
