@@ -10,7 +10,9 @@ typedef enum {
     WIFI_POLL_IDLE,           // connected, waiting for next poll interval
     WIFI_POLL_OK,             // last poll succeeded
     WIFI_POLL_API_ERROR,      // HTTP non-200 (see wifi_poller_get_last_http_code)
-    WIFI_POLL_TOKEN_INVALID,  // HTTP 401 — polling stopped until re-provision
+    WIFI_POLL_TOKEN_INVALID,  // HTTP 401 — credentials expired (backs off, self-heals)
+    WIFI_POLL_RATE_LIMITED,   // HTTP 429 — endpoint rate-limited (backs off)
+    WIFI_POLL_API_DOWN,       // HTTP 5xx — Anthropic API error (backs off)
 } wifi_poll_status_t;
 
 void wifi_poller_init(void);

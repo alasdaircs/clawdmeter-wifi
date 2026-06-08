@@ -98,8 +98,32 @@ Content-Type: application/json
 
 **Important:** `Authorization: Bearer` works. `X-Api-Key` returns HTTP 401.
 
-**Poll interval:** 60 seconds. A 401 stops polling permanently until the device is
-re-provisioned (no point hammering with a known-bad token).
+**Poll interval:** 60 seconds, with **exponential backoff** on consecutive failures
+(60s → 120s → 240s…, capped at 5 min) so an extended outage or rate-limit doesn't
+re-attempt the heavy TLS handshake every minute (relevant here — NimBLE + HTTPS already
+strain internal SRAM). The interval resets to 60s on the next HTTP 200.
+
+### Why not `/api/oauth/usage`?
+
+Upstream [PR #39](https://github.com/HermannBjorgvin/Clawdmeter/pull/39) switches the
+**daemon** to `GET /api/oauth/usage` — the zero-token endpoint behind `claude /usage`.
+That's a clear win for the daemon, but **it can't be used on this device.** That endpoint
+requires an OAuth token with broad scope (`user:profile`, `user:sessions:claude_code`, …).
+The device is provisioned with the 1-year token from `claude setup token`, which carries
+only inference scope — enough for `/v1/messages` but it returns **HTTP 403** on
+`/api/oauth/usage`. The short-lived `claudeAiOauth` access token *does* have the scope,
+but it expires in ~8 h and the device has no on-device refresh path, so it's not viable
+for an always-on gauge. Verified empirically:
+
+| Token | `/api/oauth/usage` |
+|---|---|
+| `claude setup token` (1-year, inference scope) | **403 Forbidden** |
+| `claudeAiOauth` access token (full scope, ~8 h) | 200 OK |
+| invalid/garbage token | 401 (so 403 ≠ expiry — it's scope) |
+
+So we keep `/v1/messages`. The ~1 output token/minute is the unavoidable cost of a
+scope-limited long-lived token. The backoff + error categorisation below *were* adopted
+from #39's daemon resilience work, since those are endpoint-independent.
 
 ---
 
@@ -202,15 +226,35 @@ screenshot      dump LVGL framebuffer as raw RGB565 over serial
 | Connecting to AP | `WIFI_POLL_CONNECTING` | "Connecting to Wi-Fi…" |
 | Connect timeout | `WIFI_POLL_WIFI_FAIL` | "Wi-Fi error — check credentials" |
 | HTTP 200 | `WIFI_POLL_OK` | *(overlay cleared)* |
-| HTTP 401 | `WIFI_POLL_TOKEN_INVALID` | "Token invalid — re-provision" (polling stops) |
-| Other HTTP error | `WIFI_POLL_API_ERROR` | "API error `<code>`" or "API unreachable" |
+| HTTP 401 | `WIFI_POLL_TOKEN_INVALID` | "Token invalid — re-provision" (retries 3× w/ backoff, then stops) |
+| HTTP 429 | `WIFI_POLL_RATE_LIMITED` | "Rate limited" (WARN; backs off) |
+| HTTP 5xx | `WIFI_POLL_API_DOWN` | "Anthropic API down" (backs off) |
+| Other HTTP / network error | `WIFI_POLL_API_ERROR` | "API error `<code>`" or "API unreachable" |
 | Waiting for first data | — | "Connecting…" (shown until first successful poll) |
+
+All poll failures (429/5xx/network/non-200) feed an **exponential backoff** counter
+(`s_poll_fail_count`) that stretches the poll interval up to 5 min and resets on the
+next HTTP 200. This is kept **separate** from the Wi-Fi connect-failure counter
+(`s_fail_count`) so a rate-limited API never trips the captive-portal fallback.
 
 Last successfully received `UsageData` is retained across failed polls so the display
 shows stale-but-useful data rather than blanking.
 
 After **three consecutive connection timeouts** `wifi_poller` reports fail count ≥ 3;
 `main.cpp` calls `wifi_poller_stop()` + `captive_portal_start()` automatically.
+
+### Known limitation: token lifetime
+
+The device is provisioned with the **1-year token from `claude setup token`** — long-lived
+by design, so unlike the host daemon it doesn't need to track short-lived OAuth refresh.
+The trade-off is scope: that token can't reach `/api/oauth/usage` (see "Why not" above).
+
+A 401 from this token means it's been revoked or has reached the end of its year, i.e. it
+is **terminal** — the device caches it in NVS and has no refresh path, so it stays dead
+until you re-provision (captive portal or serial `token` command). The 401 handling
+nonetheless **retries 3× with backoff before giving up**, on the theory that a 401 burst
+can also come from an Anthropic auth-server wobble rather than a genuinely dead token;
+the retries cost nothing when the token is healthy and ride out a brief blip.
 
 ---
 

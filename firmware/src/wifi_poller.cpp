@@ -13,6 +13,13 @@
 #define RETRY_INTERVAL_MS   30000
 #define POLL_INTERVAL_MS    60000
 #define HTTP_TIMEOUT_MS     10000
+// Exponential backoff cap on consecutive poll failures (429/5xx/network).
+// Stops re-attempting the heavy TLS handshake every 60s during an outage or
+// rate-limit (SRAM is tight with NimBLE + HTTPS). Doubles from POLL_INTERVAL_MS.
+#define MAX_BACKOFF_MS      300000
+// The 1-year setup token can't self-heal from a genuine 401, but a 401 burst can
+// also be an Anthropic auth-server wobble — retry a few times before stopping.
+#define MAX_AUTH_RETRIES    3
 
 static const char* API_HOST = "api.anthropic.com";
 
@@ -95,7 +102,9 @@ static StaticTask_t                s_poll_tcb;
 
 static volatile wifi_poll_status_t s_status         = WIFI_POLL_INIT;
 static volatile int                s_last_http_code = 0;
-static int                         s_fail_count     = 0;  // Core 1 only
+static int                         s_fail_count     = 0;  // Wi-Fi connect fails; Core 1 only (drives captive-portal fallback)
+static volatile int                s_poll_fail_count = 0; // consecutive poll fails; written Core 0, read Core 1 (drives backoff)
+static int                         s_auth_fail_count = 0; // consecutive 401s; Core 0 only (drives stop-after-N)
 
 // Route large mbedTLS allocations (SSL record buffers, handshake state) to PSRAM,
 // leaving internal SRAM free for the hardware AES engine's DMA descriptors.
@@ -143,9 +152,15 @@ static void do_poll() {
     http.setTimeout(HTTP_TIMEOUT_MS);
     http.collectHeaders(POLL_HEADERS, POLL_HEADER_COUNT);
 
+    // We stay on /v1/messages (a 1-token dummy message whose rate-limit
+    // *response headers* carry the usage figures) rather than the cheaper
+    // /api/oauth/usage endpoint: the latter needs an OAuth token with broader
+    // scope than the 1-year `claude setup token` carries, so it 403s on this
+    // device. See WIFI_FORK.md "Why not /api/oauth/usage".
     if (!http.begin(tls, "https://" + String(API_HOST) + "/v1/messages")) {
         s_status         = WIFI_POLL_API_ERROR;
         s_last_http_code = -1;
+        s_poll_fail_count = s_poll_fail_count + 1;
         Serial.println("wifi: http.begin failed");
         return;
     }
@@ -178,16 +193,42 @@ static void do_poll() {
         s_has_new_data = true;
         xSemaphoreGive(s_mutex);
 
-        s_status = WIFI_POLL_OK;
+        s_status          = WIFI_POLL_OK;
+        s_poll_fail_count = 0;
+        s_auth_fail_count = 0;
 
     } else if (code == 401) {
-        s_status       = WIFI_POLL_TOKEN_INVALID;
-        s_stop_polling = true;
-        Serial.println("wifi: 401 — token invalid, polling stopped");
+        // A cached token can't self-heal, but retry a few times before stopping
+        // in case the 401 was a fluke.
+        s_poll_fail_count = s_poll_fail_count + 1;
+        s_auth_fail_count++;
+        s_status = WIFI_POLL_TOKEN_INVALID;
+        if (s_auth_fail_count >= MAX_AUTH_RETRIES) {
+            s_stop_polling = true;
+            Serial.printf("wifi: 401 x%d — token invalid, polling stopped\n",
+                s_auth_fail_count);
+        } else {
+            Serial.printf("wifi: 401 (#%d/%d) — backing off before retry\n",
+                s_auth_fail_count, MAX_AUTH_RETRIES);
+        }
+
+    } else if (code == 429) {
+        s_status         = WIFI_POLL_RATE_LIMITED;
+        s_last_http_code = code;
+        s_poll_fail_count = s_poll_fail_count + 1;
+        Serial.println("wifi: 429 — rate limited, backing off");
+
+    } else if (code >= 500) {
+        s_status         = WIFI_POLL_API_DOWN;
+        s_last_http_code = code;
+        s_poll_fail_count = s_poll_fail_count + 1;
+        Serial.printf("wifi: %d — Anthropic API down\n", code);
 
     } else {
+        // Includes negative HTTPClient codes (network/TLS failure).
         s_status         = WIFI_POLL_API_ERROR;
         s_last_http_code = code;
+        s_poll_fail_count = s_poll_fail_count + 1;
         Serial.printf("wifi: API error %d\n", code);
     }
 
@@ -237,9 +278,10 @@ void wifi_poller_tick(void) {
 
         case WIFI_ST_CONNECTING:
             if (WiFi.status() == WL_CONNECTED) {
-                s_state      = WIFI_ST_CONNECTED;
-                s_status     = WIFI_POLL_IDLE;
-                s_fail_count = 0;
+                s_state           = WIFI_ST_CONNECTED;
+                s_status          = WIFI_POLL_IDLE;
+                s_fail_count      = 0;
+                s_poll_fail_count = 0;  // fresh link → reset poll backoff
                 Serial.printf("wifi: connected, IP=%s\n",
                     WiFi.localIP().toString().c_str());
                 configTime(0, 0, "pool.ntp.org");
@@ -260,11 +302,17 @@ void wifi_poller_tick(void) {
                 s_state_ts = now;
                 s_status   = WIFI_POLL_WIFI_FAIL;
                 Serial.println("wifi: lost connection, retry in 30s");
-            } else if (!s_poll_busy && !s_stop_polling &&
-                       (s_last_poll == 0 || now - s_last_poll >= POLL_INTERVAL_MS)) {
-                s_last_poll = now;
-                s_poll_busy = true;
-                xTaskNotifyGive(s_poll_task);
+            } else if (!s_poll_busy && !s_stop_polling) {
+                // Exponential backoff on consecutive poll failures: 60s, 120s,
+                // 240s… capped at MAX_BACKOFF_MS. Resets to 60s on success.
+                uint32_t shift    = s_poll_fail_count < 4 ? s_poll_fail_count : 4;
+                uint32_t interval = POLL_INTERVAL_MS << shift;
+                if (interval > MAX_BACKOFF_MS) interval = MAX_BACKOFF_MS;
+                if (s_last_poll == 0 || now - s_last_poll >= interval) {
+                    s_last_poll = now;
+                    s_poll_busy = true;
+                    xTaskNotifyGive(s_poll_task);
+                }
             }
             break;
 
@@ -307,8 +355,10 @@ void wifi_poller_stop(void) {
     // call against an active TLS socket can assert in the WiFi driver.
     for (uint32_t t0 = millis(); s_poll_busy && millis() - t0 < HTTP_TIMEOUT_MS + 500;)
         vTaskDelay(pdMS_TO_TICKS(20));
-    s_status     = WIFI_POLL_NO_CREDS;
-    s_fail_count = 0;
+    s_status          = WIFI_POLL_NO_CREDS;
+    s_fail_count      = 0;
+    s_poll_fail_count = 0;
+    s_auth_fail_count = 0;
     WiFi.disconnect();
     Serial.println("wifi: stopped");
 }
