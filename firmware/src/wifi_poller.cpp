@@ -176,6 +176,16 @@ static void do_poll() {
     int code = http.POST(body);
     Serial.printf("wifi: HTTP %d\n", code);
 
+    // Diagnostic: dump the error body on any unexpected non-200. We skip 429
+    // because its body is a generic `rate_limit_error` that carries no extra
+    // signal (confirmed empirically) — the 429 branch reads the rate-limit
+    // headers instead.
+    if (code != 200 && code != 429) {
+        String err = http.getString();
+        if (err.length() > 256) err = err.substring(0, 256);
+        Serial.printf("wifi: error body: %s\n", err.c_str());
+    }
+
     if (code == 200) {
         UsageData d = {};
         d.session_pct        = http.header(POLL_HEADERS[0]).toFloat() * 100.0f;
@@ -213,10 +223,31 @@ static void do_poll() {
         }
 
     } else if (code == 429) {
-        s_status         = WIFI_POLL_RATE_LIMITED;
-        s_last_http_code = code;
+        // A once-a-minute 1-token poll can't trip a burst RPM/TPM limit, so a 429
+        // here means the account usage window is exhausted (e.g. the monthly spend
+        // limit Claude Code reports). The body is a generic rate_limit_error with
+        // no extra signal, but the anthropic-ratelimit-unified-* headers come back
+        // on 429s too — use them to keep the real weekly figure while forcing the
+        // (blocking) session bar to 100% so the panel reads exhausted at a glance.
+        s_status          = WIFI_POLL_LIMIT_REACHED;
+        s_last_http_code  = code;
         s_poll_fail_count = s_poll_fail_count + 1;
-        Serial.println("wifi: 429 — rate limited, backing off");
+        Serial.printf("wifi: 429 — limit reached (unified-status=\"%s\"), backing off\n",
+            http.header(POLL_HEADERS[2]).c_str());
+
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+        UsageData d = s_data;  // preserve last-known weekly/reset as a fallback
+        String w = http.header(POLL_HEADERS[1]);
+        if (w.length()) d.weekly_pct = w.toFloat() * 100.0f;
+        String r = http.header(POLL_HEADERS[4]);
+        if (r.length()) d.session_reset_mins = unix_to_reset_mins(r);
+        d.session_pct = 100.0f;  // window is spent — show the session bar full
+        strlcpy(d.status, "limited", sizeof(d.status));
+        d.ok           = true;
+        d.valid        = true;
+        s_data         = d;
+        s_has_new_data = true;
+        xSemaphoreGive(s_mutex);
 
     } else if (code >= 500) {
         s_status         = WIFI_POLL_API_DOWN;

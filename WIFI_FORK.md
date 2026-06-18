@@ -227,7 +227,7 @@ screenshot      dump LVGL framebuffer as raw RGB565 over serial
 | Connect timeout | `WIFI_POLL_WIFI_FAIL` | "Wi-Fi error — check credentials" |
 | HTTP 200 | `WIFI_POLL_OK` | *(overlay cleared)* |
 | HTTP 401 | `WIFI_POLL_TOKEN_INVALID` | "Token invalid — re-provision" (retries 3× w/ backoff, then stops) |
-| HTTP 429 | `WIFI_POLL_RATE_LIMITED` | "Rate limited" (WARN; backs off) |
+| HTTP 429 | `WIFI_POLL_LIMIT_REACHED` | "Usage limit reached" (ERROR); session bar forced to 100%, real weekly kept; backs off |
 | HTTP 5xx | `WIFI_POLL_API_DOWN` | "Anthropic API down" (backs off) |
 | Other HTTP / network error | `WIFI_POLL_API_ERROR` | "API error `<code>`" or "API unreachable" |
 | Waiting for first data | — | "Connecting…" (shown until first successful poll) |

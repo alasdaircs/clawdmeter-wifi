@@ -356,9 +356,9 @@ void loop() {
                 case WIFI_POLL_TOKEN_INVALID:
                     strlcpy(msg, "Token invalid \xE2\x80\x94 re-provision", sizeof(msg));
                     lvl = UI_STATUS_ERROR; break;
-                case WIFI_POLL_RATE_LIMITED:
-                    strlcpy(msg, "Rate limited", sizeof(msg));
-                    lvl = UI_STATUS_WARN; break;
+                case WIFI_POLL_LIMIT_REACHED:
+                    strlcpy(msg, "Usage limit reached", sizeof(msg));
+                    lvl = UI_STATUS_ERROR; break;
                 case WIFI_POLL_API_DOWN:
                     strlcpy(msg, "Anthropic API down", sizeof(msg));
                     lvl = UI_STATUS_ERROR; break;
