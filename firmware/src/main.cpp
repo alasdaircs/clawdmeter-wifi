@@ -9,6 +9,7 @@
 #include "splash.h"
 #include "usage_rate.h"
 #include "idle.h"
+#include "brightness.h"
 #include "idle_cfg.h"
 #include "provisioning.h"
 #include "wifi_poller.h"
@@ -177,7 +178,8 @@ void setup() {
 
     display_hal_init();
     display_hal_begin();
-    idle_init();   // takes over brightness (DISPLAY_DEFAULT_BRIGHTNESS) and starts the idle timer
+    idle_init();       // takes over brightness and starts the idle timer
+    brightness_init(); // load the user's saved brightness level, applied via idle
 
     power_hal_init();
     imu_hal_init();
@@ -285,6 +287,13 @@ void loop() {
                 else                                          ui_cycle_screen();
             }
         }
+
+        // PWR long-press (~1.5s) cycles display brightness; persisted to NVS.
+        // Short-press keeps its screen/animation cycling role on this fork.
+        if (power_hal_pwr_long_pressed()) {
+            if (!idle_consume_wake_press()) brightness_cycle();
+        }
+        power_hal_pwr_released();  // drain the release edge (unused here)
     }
 
     ble_state_t bs = ble_get_state();
