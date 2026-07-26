@@ -90,11 +90,14 @@ Content-Type: application/json
 
 | Header | Use |
 |---|---|
-| `anthropic-ratelimit-unified-5h-utilization` | Session % (0.0–1.0) |
+| `anthropic-ratelimit-unified-5h-utilization` | Session % (0.0–1.0); presence ⇒ Pro/Max account |
 | `anthropic-ratelimit-unified-7d-utilization` | Weekly % (0.0–1.0) |
 | `anthropic-ratelimit-unified-status` | `allowed` / `throttled` / `exceeded` |
-| `anthropic-ratelimit-unified-representative-claim` | `five_hour` or `seven_day` |
+| `anthropic-ratelimit-unified-representative-claim` | Binding window (`five_hour` / `seven_day`…) — drives the terracotta pill highlight |
 | `anthropic-ratelimit-unified-5h-reset` | Unix timestamp of next 5h reset |
+| `anthropic-ratelimit-unified-7d-reset` | Unix timestamp of next weekly reset |
+| `anthropic-ratelimit-unified-overage-utilization` | Enterprise spending % — absence of the 5h header ⇒ Enterprise account (upstream fe7a7ee; billing-period math runs on-device using SNTP time) |
+| `anthropic-ratelimit-unified-overage-reset` | Enterprise billing-period end (Unix timestamp) |
 
 **Important:** `Authorization: Bearer` works. `X-Api-Key` returns HTTP 401.
 
@@ -213,6 +216,9 @@ token <value>   store Anthropic OAuth token
 status          print stored values (token masked to first 20 chars)
 clear           wipe all NVS keys
 screenshot      dump LVGL framebuffer as raw RGB565 over serial
+buzz            play the session-reset chime now (ignores the opt-in)
+chime on|off    enable/disable the session-reset chime (NVS, default off)
+chime           print the current chime setting
 ```
 
 ---
