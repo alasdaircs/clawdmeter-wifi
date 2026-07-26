@@ -72,13 +72,24 @@ static const char GTS_ROOT_R4_CA[] =
     "-----END CERTIFICATE-----\n";
 
 static const char* POLL_HEADERS[] = {
-    "anthropic-ratelimit-unified-5h-utilization",
-    "anthropic-ratelimit-unified-7d-utilization",
-    "anthropic-ratelimit-unified-status",
-    "anthropic-ratelimit-unified-representative-claim",
-    "anthropic-ratelimit-unified-5h-reset",
+    "anthropic-ratelimit-unified-5h-utilization",       // [0]
+    "anthropic-ratelimit-unified-7d-utilization",       // [1]
+    "anthropic-ratelimit-unified-status",               // [2]
+    "anthropic-ratelimit-unified-representative-claim", // [3]
+    "anthropic-ratelimit-unified-5h-reset",             // [4]
+    "anthropic-ratelimit-unified-7d-reset",             // [5]
+    "anthropic-ratelimit-unified-overage-utilization",  // [6] Enterprise
+    "anthropic-ratelimit-unified-overage-reset",        // [7] Enterprise
 };
 static const int POLL_HEADER_COUNT = sizeof(POLL_HEADERS) / sizeof(POLL_HEADERS[0]);
+#define HDR_5H_UTIL   0
+#define HDR_7D_UTIL   1
+#define HDR_STATUS    2
+#define HDR_CLAIM     3
+#define HDR_5H_RESET  4
+#define HDR_7D_RESET  5
+#define HDR_OV_UTIL   6
+#define HDR_OV_RESET  7
 
 enum wifi_state_t {
     WIFI_ST_IDLE,
@@ -136,6 +147,64 @@ static int unix_to_reset_mins(const String& ts_str) {
     return diff > 0 ? (int)(diff / 60) : 0;
 }
 
+static int days_in_month(int year, int mon0) {  // mon0: 0-11
+    static const int dm[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    int d = dm[mon0];
+    if (mon0 == 1 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) d = 29;
+    return d;
+}
+
+// Enterprise billing-period math (port of the upstream daemon's
+// _billing_period_info, fe7a7ee). Billing periods are assumed calendar-
+// monthly: period_end is the overage-reset timestamp, period_start the same
+// day/time one calendar month earlier (day clamped to the shorter month).
+// Guards period_end<=0: overage-reset defaults to "0" when the header is
+// absent (upstream e1f06d7). Times are UTC (SNTP is configured with TZ=0).
+static void billing_period_info(const String& reset_str, UsageData* d) {
+    d->time_pct    = 0;
+    d->period_days = 30;
+    d->reset_date[0] = '\0';
+
+    time_t now = time(nullptr);
+    long   end_l = reset_str.toInt();
+    if (end_l <= 0 || now < 1000000000L) return;
+    time_t period_end = (time_t)end_l;
+
+    struct tm tm_end;
+    gmtime_r(&period_end, &tm_end);
+
+    int py = tm_end.tm_year + 1900;
+    int pm = tm_end.tm_mon - 1;
+    if (pm < 0) { pm = 11; py--; }
+    struct tm tm_start = tm_end;
+    tm_start.tm_year = py - 1900;
+    tm_start.tm_mon  = pm;
+    int dim = days_in_month(py, pm);
+    if (tm_start.tm_mday > dim) tm_start.tm_mday = dim;
+    tm_start.tm_isdst = 0;
+    time_t period_start = mktime(&tm_start);  // TZ is UTC on this device
+    double period_len = difftime(period_end, period_start);
+    if (period_len <= 0) return;
+
+    double pct = difftime(now, period_start) / period_len * 100.0;
+    if (pct < 0)   pct = 0;
+    if (pct > 100) pct = 100;
+    d->time_pct    = (int)(pct + 0.5);
+    d->period_days = (int)(period_len / 86400.0 + 0.5);
+
+    static const char* MON[] = {"Jan","Feb","Mar","Apr","May","Jun",
+                                "Jul","Aug","Sep","Oct","Nov","Dec"};
+    snprintf(d->reset_date, sizeof(d->reset_date), "%s %d",
+             MON[tm_end.tm_mon], tm_end.tm_mday);
+}
+
+// Which window is currently binding, from the representative-claim header
+// ("five_hour", "seven_day", model-scoped seven_day_* variants...).
+static void parse_binding_claim(const String& claim, UsageData* d) {
+    d->session_binding = claim.startsWith("five_hour");
+    d->weekly_binding  = claim.startsWith("seven_day");
+}
+
 static void do_poll() {
     if (!provisioning_has_token()) {
         s_status = WIFI_POLL_NO_TOKEN;
@@ -188,15 +257,29 @@ static void do_poll() {
 
     if (code == 200) {
         UsageData d = {};
-        d.session_pct        = http.header(POLL_HEADERS[0]).toFloat() * 100.0f;
-        d.weekly_pct         = http.header(POLL_HEADERS[1]).toFloat() * 100.0f;
-        strlcpy(d.status, http.header(POLL_HEADERS[2]).c_str(), sizeof(d.status));
-        d.session_reset_mins = unix_to_reset_mins(http.header(POLL_HEADERS[4]));
-        d.weekly_reset_mins  = -1;
+        if (http.header(POLL_HEADERS[HDR_5H_UTIL]).length() > 0) {
+            // Pro/Max: 5h + 7d windows.
+            d.session_pct        = http.header(POLL_HEADERS[HDR_5H_UTIL]).toFloat() * 100.0f;
+            d.weekly_pct         = http.header(POLL_HEADERS[HDR_7D_UTIL]).toFloat() * 100.0f;
+            d.session_reset_mins = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_5H_RESET]));
+            d.weekly_reset_mins  = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_7D_RESET]));
+            parse_binding_claim(http.header(POLL_HEADERS[HDR_CLAIM]), &d);
+        } else {
+            // Enterprise/overage: a single spending-limit window (fe7a7ee).
+            d.enterprise         = true;
+            d.session_pct        = http.header(POLL_HEADERS[HDR_OV_UTIL]).toFloat() * 100.0f;
+            d.session_reset_mins = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_OV_RESET]));
+            d.weekly_pct         = 0.0f;
+            d.weekly_reset_mins  = -1;
+            billing_period_info(http.header(POLL_HEADERS[HDR_OV_RESET]), &d);
+        }
+        strlcpy(d.status, http.header(POLL_HEADERS[HDR_STATUS]).c_str(), sizeof(d.status));
         d.ok    = true;
         d.valid = true;
-        Serial.printf("wifi: s=%.1f%% w=%.1f%% status=%s reset=%dm\n",
-            d.session_pct, d.weekly_pct, d.status, d.session_reset_mins);
+        Serial.printf("wifi: %s s=%.1f%% w=%.1f%% status=%s reset=%dm claim=%s\n",
+            d.enterprise ? "ent" : "pro",
+            d.session_pct, d.weekly_pct, d.status, d.session_reset_mins,
+            http.header(POLL_HEADERS[HDR_CLAIM]).c_str());
 
         xSemaphoreTake(s_mutex, portMAX_DELAY);
         s_data         = d;
@@ -237,10 +320,11 @@ static void do_poll() {
 
         xSemaphoreTake(s_mutex, portMAX_DELAY);
         UsageData d = s_data;  // preserve last-known weekly/reset as a fallback
-        String w = http.header(POLL_HEADERS[1]);
+        String w = http.header(POLL_HEADERS[HDR_7D_UTIL]);
         if (w.length()) d.weekly_pct = w.toFloat() * 100.0f;
-        String r = http.header(POLL_HEADERS[4]);
+        String r = http.header(POLL_HEADERS[HDR_5H_RESET]);
         if (r.length()) d.session_reset_mins = unix_to_reset_mins(r);
+        parse_binding_claim(http.header(POLL_HEADERS[HDR_CLAIM]), &d);
         d.session_pct = 100.0f;  // window is spent — show the session bar full
         strlcpy(d.status, "limited", sizeof(d.status));
         d.ok           = true;
