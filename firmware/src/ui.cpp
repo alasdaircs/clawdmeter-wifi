@@ -128,6 +128,18 @@ static lv_obj_t* lbl_weekly_reset;
 static lv_obj_t* lbl_anim;
 static lv_obj_t* lbl_status;
 
+// ---- Live-data freshness → stale "Zzz" sub-view (ported from upstream
+// 72524ef, adapted to the Wi-Fi fork's multi-screen UI). When no valid usage
+// update has landed within DATA_FRESH_MS, hide the panels and show a small
+// sleeping creature instead of rendering stale numbers as if they were live.
+// 150s = 2.5 poll intervals, so one failed 60s poll doesn't flash the Zzz.
+static lv_obj_t* panels_group;          // the two usage panels
+static lv_obj_t* stale_group;           // the "Zzz" idle view
+static uint32_t  last_data_ms = 0;      // lv_tick of the last valid usage update
+static bool      data_received = false; // any valid update since boot
+static bool      showing_stale = false;
+static const uint32_t DATA_FRESH_MS = 150000;
+
 // ---- Bluetooth screen widgets ----
 static lv_obj_t* ble_container;
 static lv_obj_t* lbl_ble_status;
@@ -344,13 +356,38 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_style_text_color(lbl_title, COL_TEXT, 0);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 16, L.title_y);
 
-    make_usage_panel(usage_container, L.content_y, "Current",
+    // Panels live in their own transparent full-size group so the stale
+    // "Zzz" view can swap with them without touching the title/status line.
+    panels_group = lv_obj_create(usage_container);
+    lv_obj_set_size(panels_group, L.scr_w, L.scr_h);
+    lv_obj_set_pos(panels_group, 0, 0);
+    lv_obj_set_style_bg_opa(panels_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(panels_group, 0, 0);
+    lv_obj_set_style_pad_all(panels_group, 0, 0);
+    lv_obj_clear_flag(panels_group, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(panels_group, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    make_usage_panel(panels_group, L.content_y, "Current",
                      &lbl_session_pct, &lbl_session_label,
                      &bar_session, &lbl_session_reset);
-    make_usage_panel(usage_container,
+    make_usage_panel(panels_group,
                      L.content_y + L.usage_panel_h + L.usage_panel_gap, "Weekly",
                      &lbl_weekly_pct, &lbl_weekly_label,
                      &bar_weekly, &lbl_weekly_reset);
+
+    // Stale/Zzz view — a shrunk sleeping creature (claudepix "expression
+    // sleep") centered where the panels normally sit. Hidden by default.
+    stale_group = lv_obj_create(usage_container);
+    lv_obj_set_size(stale_group, L.scr_w, L.scr_h - L.content_y);
+    lv_obj_set_pos(stale_group, 0, L.content_y);
+    lv_obj_set_style_bg_opa(stale_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(stale_group, 0, 0);
+    lv_obj_set_style_pad_all(stale_group, 0, 0);
+    lv_obj_clear_flag(stale_group, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(stale_group, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_t* creature = splash_mini_create(stale_group, "expression sleep", 160);
+    if (creature) lv_obj_align(creature, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_add_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
 
     lbl_anim = lv_label_create(usage_container);
     lv_label_set_text(lbl_anim, "");
@@ -578,6 +615,8 @@ void ui_init(void) {
 
 void ui_update(const UsageData* data) {
     if (!data->valid) return;
+    last_data_ms  = lv_tick_get();   // a valid usage update just landed
+    data_received = true;
 
     int s_pct = (int)(data->session_pct + 0.5f);
 
@@ -598,8 +637,28 @@ void ui_update(const UsageData* data) {
     lv_label_set_text(lbl_weekly_reset, buf);
 }
 
+// Swap panels <-> stale Zzz view based on data freshness. Only re-lays-out on
+// an actual change. Stale only ever shows after at least one valid update —
+// before that the panels show "---%" and the status overlay explains itself.
+static void update_stale_view(void) {
+    if (!panels_group || !stale_group) return;
+    bool stale = data_received &&
+                 (lv_tick_get() - last_data_ms) >= DATA_FRESH_MS;
+    if (stale == showing_stale) return;
+    showing_stale = stale;
+    if (stale) {
+        lv_obj_add_flag(panels_group, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(panels_group, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
+    update_stale_view();
+    if (showing_stale) splash_mini_tick();  // animate the sleeping creature
     if (lv_obj_has_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN)) return;
 
     uint32_t now = lv_tick_get();
@@ -616,9 +675,13 @@ void ui_tick_anim(void) {
                                                         : (SPINNER_PHASES - anim_phase);
 
         static char buf[80];
+        // On the stale view, alternate "Listening…"/"No data…" so the screen
+        // reads as alive AND explicitly data-less (upstream 72524ef).
+        const char* word = showing_stale
+            ? ((anim_msg_idx & 1) ? "No data" : "Listening")
+            : anim_messages[anim_msg_idx];
         snprintf(buf, sizeof(buf), "%s %s\xE2\x80\xA6",
-                 spinner_frames[anim_spinner_idx],
-                 anim_messages[anim_msg_idx]);
+                 spinner_frames[anim_spinner_idx], word);
         lv_label_set_text(lbl_anim, buf);
     }
 }
