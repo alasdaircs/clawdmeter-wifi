@@ -5,6 +5,7 @@
 enum screen_t {
     SCREEN_SPLASH,
     SCREEN_USAGE,
+    SCREEN_SETTINGS,
     SCREEN_BLUETOOTH,
     SCREEN_WIFI,
     SCREEN_COUNT,
@@ -30,3 +31,8 @@ void ui_update_battery(int percent, bool charging);
 void ui_update_wifi_creds(bool portal_active);
 bool ui_hotspot_requested(void);
 void ui_set_nav_locked(bool locked);
+
+// Re-sync the settings screen's widgets (brightness slider, chime toggle)
+// from their backing stores. Call after an external change (PWR long-press
+// brightness cycle, `chime on|off` over serial).
+void ui_settings_refresh(void);

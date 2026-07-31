@@ -1,5 +1,9 @@
 #include "ui.h"
 #include "splash.h"
+#include "brightness.h"
+#include "chime_pref.h"
+#include "idle.h"
+#include "hal/sound_hal.h"
 #include <lvgl.h>
 #include "logo.h"
 #include "icons.h"
@@ -151,6 +155,12 @@ static lv_obj_t* ble_container;
 static lv_obj_t* lbl_ble_status;
 static lv_obj_t* lbl_ble_device;
 static lv_obj_t* lbl_ble_mac;
+
+// ---- Settings screen widgets ----
+static lv_obj_t* settings_container;
+static lv_obj_t* settings_slider;
+static lv_obj_t* lbl_brt_val;
+static lv_obj_t* chime_switch;
 
 // ---- Wi-Fi screen widgets ----
 static lv_obj_t* wifi_container;
@@ -439,6 +449,114 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
 }
 
+// ======== Settings Screen ========
+
+static void brt_slider_cb(lv_event_t* e) {
+    int32_t v = lv_slider_get_value(settings_slider);
+    if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED) {
+        // Live preview while dragging — apply to the panel but don't touch
+        // NVS on every pixel of travel.
+        idle_set_awake_brightness((uint8_t)v);
+        lv_label_set_text_fmt(lbl_brt_val, "%d%%", (int)(v * 100 / 255));
+    } else {  // LV_EVENT_RELEASED — persist once
+        brightness_set((uint8_t)v);
+    }
+}
+
+static void chime_switch_cb(lv_event_t* e) {
+    (void)e;
+    bool on = lv_obj_has_state(chime_switch, LV_STATE_CHECKED);
+    chime_pref_set(on);
+    if (on) sound_hal_play_reset();  // audible confirmation (no-op without speaker)
+}
+
+static void init_settings_screen(lv_obj_t* scr) {
+    settings_container = lv_obj_create(scr);
+    lv_obj_set_size(settings_container, L.scr_w, L.scr_h);
+    lv_obj_set_pos(settings_container, 0, 0);
+    lv_obj_set_style_bg_opa(settings_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_container, 0, 0);
+    lv_obj_set_style_pad_all(settings_container, 0, 0);
+    lv_obj_clear_flag(settings_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(settings_container, global_click_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* title = lv_label_create(settings_container);
+    lv_label_set_text(title, "Settings");
+    lv_obj_set_style_text_font(title, &font_tiempos_56, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 16, L.title_y);
+
+    // Brightness panel: label + live % + slider. No EVENT_BUBBLE — a tap
+    // inside the panel must not cycle the screen mid-adjustment.
+    lv_obj_t* p1 = make_panel(settings_container, L.margin, L.content_y,
+                              L.content_w, L.usage_panel_h);
+    lv_obj_clear_flag(p1, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    lv_obj_t* lbl_b = lv_label_create(p1);
+    lv_label_set_text(lbl_b, "Brightness");
+    lv_obj_set_style_text_font(lbl_b, &font_styrene_28, 0);
+    lv_obj_set_style_text_color(lbl_b, COL_TEXT, 0);
+    lv_obj_set_pos(lbl_b, 0, 0);
+
+    lbl_brt_val = lv_label_create(p1);
+    lv_obj_set_style_text_font(lbl_brt_val, &font_styrene_28, 0);
+    lv_obj_set_style_text_color(lbl_brt_val, COL_DIM, 0);
+    lv_obj_align(lbl_brt_val, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    settings_slider = lv_slider_create(p1);
+    lv_slider_set_range(settings_slider, 10, 255);
+    lv_obj_set_size(settings_slider, L.content_w - 32 - 24, 20);
+    lv_obj_set_pos(settings_slider, 12, L.usage_bar_y + 8);
+    lv_obj_set_style_bg_color(settings_slider, COL_BAR_BG, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(settings_slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(settings_slider, COL_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(settings_slider, COL_TEXT, LV_PART_KNOB);
+    // Widen the touch target well beyond the visual track.
+    lv_obj_set_ext_click_area(settings_slider, 24);
+    lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_RELEASED, NULL);
+
+    // Chime panel: label + switch.
+    lv_obj_t* p2 = make_panel(settings_container, L.margin,
+                              L.content_y + L.usage_panel_h + L.usage_panel_gap,
+                              L.content_w, L.usage_panel_h);
+    lv_obj_clear_flag(p2, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    // Top-aligned to mirror the brightness panel's layout.
+    lv_obj_t* lbl_c = lv_label_create(p2);
+    lv_label_set_text(lbl_c, "Reset chime");
+    lv_obj_set_style_text_font(lbl_c, &font_styrene_28, 0);
+    lv_obj_set_style_text_color(lbl_c, COL_TEXT, 0);
+    lv_obj_set_pos(lbl_c, 0, 0);
+
+    lv_obj_t* lbl_c2 = lv_label_create(p2);
+    lv_label_set_text(lbl_c2, "Rings when your session resets");
+    lv_obj_set_style_text_font(lbl_c2, &font_styrene_16, 0);
+    lv_obj_set_style_text_color(lbl_c2, COL_DIM, 0);
+    lv_obj_set_pos(lbl_c2, 0, 52);
+
+    chime_switch = lv_switch_create(p2);
+    lv_obj_set_size(chime_switch, 84, 44);
+    lv_obj_align(chime_switch, LV_ALIGN_TOP_RIGHT, 0, -4);
+    lv_obj_set_style_bg_color(chime_switch, COL_BAR_BG, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(chime_switch, COL_ACCENT,
+                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(chime_switch, COL_TEXT, LV_PART_KNOB);
+    lv_obj_set_ext_click_area(chime_switch, 16);
+    lv_obj_add_event_cb(chime_switch, chime_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_settings_refresh(void) {
+    if (!settings_container) return;
+    uint8_t b = brightness_get();
+    lv_slider_set_value(settings_slider, b, LV_ANIM_OFF);
+    lv_label_set_text_fmt(lbl_brt_val, "%d%%", (int)(b * 100 / 255));
+    if (chime_pref_get()) lv_obj_add_state(chime_switch, LV_STATE_CHECKED);
+    else                  lv_obj_remove_state(chime_switch, LV_STATE_CHECKED);
+}
+
 // ======== Wi-Fi Screen ========
 
 static void redact_password(const String& pass, char* buf, size_t len) {
@@ -629,8 +747,10 @@ void ui_init(void) {
     init_battery_icons();
 
     init_usage_screen(scr);
+    init_settings_screen(scr);
     init_bluetooth_screen(scr);
     init_wifi_screen(scr);
+    ui_settings_refresh();
     splash_init(scr);
 
     if (splash_get_root()) {
@@ -808,6 +928,7 @@ bool ui_hotspot_requested(void) {
 
 void ui_show_screen(screen_t screen) {
     lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(wifi_container, LV_OBJ_FLAG_HIDDEN);
     splash_hide();
@@ -815,6 +936,10 @@ void ui_show_screen(screen_t screen) {
     switch (screen) {
     case SCREEN_SPLASH:     splash_show(); break;
     case SCREEN_USAGE:      lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN); break;
+    case SCREEN_SETTINGS:
+        ui_settings_refresh();  // widgets reflect current state on entry
+        lv_obj_clear_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
+        break;
     case SCREEN_BLUETOOTH:  lv_obj_clear_flag(ble_container, LV_OBJ_FLAG_HIDDEN); break;
     case SCREEN_WIFI:       lv_obj_clear_flag(wifi_container, LV_OBJ_FLAG_HIDDEN); break;
     default: break;
@@ -836,7 +961,8 @@ void ui_cycle_screen(void) {
     if (s_nav_locked) return;
     screen_t next;
     switch (current_screen) {
-    case SCREEN_USAGE:     next = SCREEN_BLUETOOTH; break;
+    case SCREEN_USAGE:     next = SCREEN_SETTINGS;  break;
+    case SCREEN_SETTINGS:  next = SCREEN_BLUETOOTH; break;
     case SCREEN_BLUETOOTH: next = SCREEN_WIFI;      break;
     case SCREEN_WIFI:      next = SCREEN_USAGE;     break;
     default:               next = SCREEN_USAGE;     break;

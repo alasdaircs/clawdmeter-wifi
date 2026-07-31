@@ -10,6 +10,7 @@
 #include "usage_rate.h"
 #include "idle.h"
 #include "brightness.h"
+#include "chime_pref.h"
 #include "idle_cfg.h"
 #include "provisioning.h"
 #include "wifi_poller.h"
@@ -101,29 +102,6 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
 
 
 
-// ---- Session-reset chime opt-in ----
-// Upstream gates the chime on a daemon config; this fork has no daemon, so
-// the flag lives in NVS and is toggled over serial with `chime on|off`.
-// Default off, matching upstream. The `buzz` command ignores it.
-#include <Preferences.h>
-static bool g_chime_enabled = false;
-
-static void chime_pref_load(void) {
-    Preferences prefs;
-    prefs.begin("clawdmeter", true);
-    g_chime_enabled = prefs.getBool("chime_en", false);
-    prefs.end();
-}
-
-static void chime_pref_set(bool on) {
-    g_chime_enabled = on;
-    Preferences prefs;
-    prefs.begin("clawdmeter", false);
-    prefs.putBool("chime_en", on);
-    prefs.end();
-    Serial.printf("chime: %s (saved)\n", on ? "on" : "off");
-}
-
 // ---- Serial command buffer ----
 #define CMD_BUF_SIZE 256
 static char cmd_buf[CMD_BUF_SIZE];
@@ -175,10 +153,10 @@ static void check_serial_cmd() {
             if (cmd_pos > 0) {
                 if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
                 else if (strcmp(cmd_buf, "buzz") == 0)  sound_hal_play_reset();
-                else if (strcmp(cmd_buf, "chime on") == 0)  chime_pref_set(true);
-                else if (strcmp(cmd_buf, "chime off") == 0) chime_pref_set(false);
+                else if (strcmp(cmd_buf, "chime on") == 0)  { chime_pref_set(true);  ui_settings_refresh(); }
+                else if (strcmp(cmd_buf, "chime off") == 0) { chime_pref_set(false); ui_settings_refresh(); }
                 else if (strcmp(cmd_buf, "chime") == 0)
-                    Serial.printf("chime: %s\n", g_chime_enabled ? "on" : "off");
+                    Serial.printf("chime: %s\n", chime_pref_get() ? "on" : "off");
                 else {
                     provisioning_handle_cmd(cmd_buf);
                     ui_update_wifi_creds(captive_portal_is_active());
@@ -323,7 +301,10 @@ void loop() {
         // PWR long-press (~1.5s) cycles display brightness; persisted to NVS.
         // Short-press keeps its screen/animation cycling role on this fork.
         if (power_hal_pwr_long_pressed()) {
-            if (!idle_consume_wake_press()) brightness_cycle();
+            if (!idle_consume_wake_press()) {
+                brightness_cycle();
+                ui_settings_refresh();  // keep the settings slider in sync
+            }
         }
         power_hal_pwr_released();  // drain the release edge (unused here)
     }
@@ -373,7 +354,7 @@ void loop() {
         // 5-hour session limit refilled → chime so the user knows they can
         // use Claude again (no-op on boards without a speaker). Gated on the
         // NVS `chime on` opt-in; the `buzz` serial cmd ignores it.
-        if (session_reset && g_chime_enabled) {
+        if (session_reset && chime_pref_get()) {
             Serial.println("session reset detected — chime");
             sound_hal_play_reset();
         }
