@@ -344,10 +344,15 @@ void loop() {
         ui_update_battery(pct, charging);
     }
 
-    // Start hotspot: manual button on Wi-Fi screen, or 3 successive connect failures.
+    // Start hotspot: manual button on Wi-Fi screen, or 3 successive connect
+    // failures — but only while the stored credentials are unproven. Once
+    // they've connected successfully this boot, failures mean out-of-range /
+    // AP down, and the poller retries forever instead (portal is one-way
+    // until reboot, which stranded the device after a walk out of range).
     if (!captive_portal_is_active()) {
         bool manual = ui_hotspot_requested();
-        bool auto_fail = (wifi_poller_get_fail_count() >= 3);
+        bool auto_fail = (wifi_poller_get_fail_count() >= 3) &&
+                         !wifi_poller_has_ever_connected();
         if (manual || auto_fail) {
             if (auto_fail) Serial.println("wifi: 3 failures, switching to hotspot");
             wifi_poller_stop();
@@ -397,12 +402,14 @@ void loop() {
                     strlcpy(msg, "Setup: token <sk-ant-...> via serial", sizeof(msg));
                     lvl = UI_STATUS_WARN; break;
                 case WIFI_POLL_CONNECTING:
-                    strlcpy(msg, "Connecting to Wi-Fi\xE2\x80\xA6", sizeof(msg)); break;
+                    // ASCII only: lbl_status renders in Styrene 20, which was
+                    // compiled without the em-dash/ellipsis glyphs (they tofu).
+                    strlcpy(msg, "Connecting to Wi-Fi...", sizeof(msg)); break;
                 case WIFI_POLL_WIFI_FAIL:
-                    strlcpy(msg, "Wi-Fi error \xE2\x80\x94 check credentials", sizeof(msg));
+                    strlcpy(msg, "Wi-Fi error - check credentials", sizeof(msg));
                     lvl = UI_STATUS_ERROR; break;
                 case WIFI_POLL_TOKEN_INVALID:
-                    strlcpy(msg, "Token invalid \xE2\x80\x94 re-provision", sizeof(msg));
+                    strlcpy(msg, "Token invalid - re-provision", sizeof(msg));
                     lvl = UI_STATUS_ERROR; break;
                 case WIFI_POLL_LIMIT_REACHED:
                     strlcpy(msg, "Usage limit reached", sizeof(msg));
@@ -420,7 +427,7 @@ void loop() {
             }
             // Keep overlay until first data arrives even if wifi status is OK/IDLE.
             if (msg[0] == '\0' && !usage.valid) {
-                strlcpy(msg, "Connecting\xE2\x80\xA6", sizeof(msg));
+                strlcpy(msg, "Connecting...", sizeof(msg));
             }
             ui_set_status(lvl, msg[0] ? msg : nullptr);
         }

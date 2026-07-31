@@ -114,6 +114,7 @@ static StaticTask_t                s_poll_tcb;
 static volatile wifi_poll_status_t s_status         = WIFI_POLL_INIT;
 static volatile int                s_last_http_code = 0;
 static int                         s_fail_count     = 0;  // Wi-Fi connect fails; Core 1 only (drives captive-portal fallback)
+static bool                        s_ever_connected = false; // creds have worked since boot; Core 1 only
 static volatile int                s_poll_fail_count = 0; // consecutive poll fails; written Core 0, read Core 1 (drives backoff)
 static int                         s_auth_fail_count = 0; // consecutive 401s; Core 0 only (drives stop-after-N)
 
@@ -397,6 +398,7 @@ void wifi_poller_tick(void) {
                 s_status          = WIFI_POLL_IDLE;
                 s_fail_count      = 0;
                 s_poll_fail_count = 0;  // fresh link → reset poll backoff
+                s_ever_connected  = true;  // creds proven — disarm auto-portal
                 Serial.printf("wifi: connected, IP=%s\n",
                     WiFi.localIP().toString().c_str());
                 configTime(0, 0, "pool.ntp.org");
@@ -460,6 +462,7 @@ void wifi_poller_consume_data(UsageData* out) {
 wifi_poll_status_t wifi_poller_get_status(void)    { return s_status; }
 int wifi_poller_get_last_http_code(void)           { return s_last_http_code; }
 int wifi_poller_get_fail_count(void)               { return s_fail_count; }
+bool wifi_poller_has_ever_connected(void)          { return s_ever_connected; }
 
 void wifi_poller_stop(void) {
     s_stop_polling = true;

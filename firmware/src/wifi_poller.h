@@ -23,4 +23,10 @@ void wifi_poller_consume_data(UsageData* out);
 wifi_poll_status_t wifi_poller_get_status(void);
 int wifi_poller_get_last_http_code(void);
 int wifi_poller_get_fail_count(void);
+
+// True once the stored credentials have connected successfully since boot.
+// Gates the auto captive-portal fallback: proven credentials mean connect
+// failures are environmental (out of range, AP down), so the poller keeps
+// retrying instead of surrendering to hotspot mode.
+bool wifi_poller_has_ever_connected(void);
 void wifi_poller_stop(void);
