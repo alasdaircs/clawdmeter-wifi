@@ -254,6 +254,7 @@ static void format_reset_time(int mins, char* buf, size_t len) {
 static void global_click_cb(lv_event_t* e);
 static void ble_reset_click_cb(lv_event_t* e);
 static void wifi_hotspot_click_cb(lv_event_t* e);
+static void screen_gesture_cb(lv_event_t* e);
 
 static bool s_hotspot_requested = false;
 static bool s_nav_locked        = false;
@@ -513,6 +514,9 @@ static void init_settings_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_color(settings_slider, COL_TEXT, LV_PART_KNOB);
     // Widen the touch target well beyond the visual track.
     lv_obj_set_ext_click_area(settings_slider, 24);
+    // A horizontal drag here is brightness adjustment, not a page swipe —
+    // keep the gesture from bubbling to the screen-level swipe handler.
+    lv_obj_clear_flag(settings_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_RELEASED, NULL);
 
@@ -543,6 +547,7 @@ static void init_settings_screen(lv_obj_t* scr) {
                               LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(chime_switch, COL_TEXT, LV_PART_KNOB);
     lv_obj_set_ext_click_area(chime_switch, 16);
+    lv_obj_clear_flag(chime_switch, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(chime_switch, chime_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
@@ -742,6 +747,8 @@ void ui_init(void) {
     lv_obj_t* scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    // Left/right swipes anywhere cycle screens (gestures bubble up here).
+    lv_obj_add_event_cb(scr, screen_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     init_icon_dsc_rgb565a8(&logo_dsc, LOGO_WIDTH, LOGO_HEIGHT, logo_data);
     init_battery_icons();
@@ -903,6 +910,122 @@ static void apply_battery_visibility(void) {
     else                                  lv_obj_clear_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
 }
 
+// ---- Swipe navigation + slide transition ----
+// Screen cycle order (splash excluded — it's a tap-toggled overlay).
+static screen_t nav_next(screen_t s) {
+    switch (s) {
+    case SCREEN_USAGE:     return SCREEN_SETTINGS;
+    case SCREEN_SETTINGS:  return SCREEN_BLUETOOTH;
+    case SCREEN_BLUETOOTH: return SCREEN_WIFI;
+    case SCREEN_WIFI:      return SCREEN_USAGE;
+    default:               return SCREEN_USAGE;
+    }
+}
+
+static screen_t nav_prev(screen_t s) {
+    switch (s) {
+    case SCREEN_USAGE:     return SCREEN_WIFI;
+    case SCREEN_SETTINGS:  return SCREEN_USAGE;
+    case SCREEN_BLUETOOTH: return SCREEN_SETTINGS;
+    case SCREEN_WIFI:      return SCREEN_BLUETOOTH;
+    default:               return SCREEN_USAGE;
+    }
+}
+
+static lv_obj_t* container_for(screen_t s) {
+    switch (s) {
+    case SCREEN_USAGE:     return usage_container;
+    case SCREEN_SETTINGS:  return settings_container;
+    case SCREEN_BLUETOOTH: return ble_container;
+    case SCREEN_WIFI:      return wifi_container;
+    default:               return nullptr;   // splash has its own root
+    }
+}
+
+// Slide transition between the four main screens. The containers are
+// full-screen siblings, so animating their x offsets in lockstep reads as a
+// horizontal page swipe. PARTIAL render mode repaints the whole panel every
+// frame of the slide, so keep it short — frame rate is what it is.
+#define SLIDE_MS 250
+static lv_obj_t* slide_out_obj = nullptr;   // non-NULL while a slide runs
+
+static void slide_anim_x_cb(void* obj, int32_t v) {
+    lv_obj_set_x((lv_obj_t*)obj, v);
+}
+
+static void slide_done_cb(lv_anim_t* a) {
+    (void)a;
+    if (slide_out_obj) {
+        lv_obj_add_flag(slide_out_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_x(slide_out_obj, 0);
+        slide_out_obj = nullptr;
+    }
+}
+
+// Kill an in-flight slide and re-zero the containers. ui_show_screen calls
+// this before its hide-everything pass so an instant switch (boot, nav lock)
+// can't land while two containers are mid-flight.
+static void slide_abort(void) {
+    if (!slide_out_obj) return;
+    for (int s = 0; s < SCREEN_COUNT; s++) {
+        lv_obj_t* c = container_for((screen_t)s);
+        if (!c) continue;
+        lv_anim_delete(c, slide_anim_x_cb);
+        lv_obj_set_x(c, 0);
+    }
+    slide_out_obj = nullptr;
+}
+
+// dir = +1: `next` slides in from the right; -1: from the left.
+static void ui_slide_to(screen_t next, int dir) {
+    if (s_nav_locked || next == current_screen) return;
+    if (slide_out_obj) return;               // one transition at a time
+    lv_obj_t* out = container_for(current_screen);
+    lv_obj_t* in  = container_for(next);
+    if (!out || !in) { ui_show_screen(next); return; }  // splash involved
+
+    if (next == SCREEN_SETTINGS) ui_settings_refresh();
+
+    slide_out_obj = out;
+    lv_obj_set_x(in, dir * L.scr_w);
+    lv_obj_clear_flag(in, LV_OBJ_FLAG_HIDDEN);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_exec_cb(&a, slide_anim_x_cb);
+    lv_anim_set_duration(&a, SLIDE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+
+    lv_anim_set_var(&a, out);
+    lv_anim_set_values(&a, 0, -dir * L.scr_w);
+    lv_anim_start(&a);
+
+    lv_anim_set_var(&a, in);
+    lv_anim_set_values(&a, dir * L.scr_w, 0);
+    lv_anim_set_completed_cb(&a, slide_done_cb);
+    lv_anim_start(&a);
+
+    current_screen = next;
+    prev_non_splash_screen = next;   // nav_next/nav_prev never return splash
+}
+
+// Attached to the LVGL screen: gestures bubble up from whatever object the
+// press landed on (the slider and chime switch opt out via GESTURE_BUBBLE).
+static void screen_gesture_cb(lv_event_t* e) {
+    (void)e;
+    lv_indev_t* indev = lv_indev_active();
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir != LV_DIR_LEFT && dir != LV_DIR_RIGHT) return;
+    // Swallow the release so it can't double as a CLICKED (splash toggle,
+    // hotspot button, BLE reset zone).
+    lv_indev_wait_release(indev);
+    if (s_nav_locked) return;
+    if (current_screen == SCREEN_SPLASH) { splash_next(); return; }  // like PWR
+    if (dir == LV_DIR_LEFT) ui_slide_to(nav_next(current_screen), +1);
+    else                    ui_slide_to(nav_prev(current_screen), -1);
+}
+
 static void global_click_cb(lv_event_t* e) {
     (void)e;
     if (s_nav_locked) return;
@@ -927,6 +1050,7 @@ bool ui_hotspot_requested(void) {
 }
 
 void ui_show_screen(screen_t screen) {
+    slide_abort();
     lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
@@ -959,15 +1083,7 @@ void ui_set_nav_locked(bool locked) { s_nav_locked = locked; }
 
 void ui_cycle_screen(void) {
     if (s_nav_locked) return;
-    screen_t next;
-    switch (current_screen) {
-    case SCREEN_USAGE:     next = SCREEN_SETTINGS;  break;
-    case SCREEN_SETTINGS:  next = SCREEN_BLUETOOTH; break;
-    case SCREEN_BLUETOOTH: next = SCREEN_WIFI;      break;
-    case SCREEN_WIFI:      next = SCREEN_USAGE;     break;
-    default:               next = SCREEN_USAGE;     break;
-    }
-    ui_show_screen(next);
+    ui_slide_to(nav_next(current_screen), +1);
 }
 
 void ui_toggle_splash(void) {
