@@ -18,6 +18,8 @@ PY="python3"
 if ! python3 -c "import serial" 2>/dev/null; then
     if [ -x "$HOME/.platformio/penv/bin/python" ]; then
         PY="$HOME/.platformio/penv/bin/python"
+    elif [ -x "$HOME/.platformio/penv/Scripts/python.exe" ]; then
+        PY="$HOME/.platformio/penv/Scripts/python.exe"   # Windows (Git Bash)
     fi
 fi
 
