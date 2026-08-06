@@ -33,6 +33,6 @@ bool ui_hotspot_requested(void);
 void ui_set_nav_locked(bool locked);
 
 // Re-sync the settings screen's widgets (brightness slider, chime toggle)
-// from their backing stores. Call after an external change (PWR long-press
-// brightness cycle, `chime on|off` over serial).
+// from their backing stores. Call after an external change (e.g.
+// `chime on|off` over serial).
 void ui_settings_refresh(void);

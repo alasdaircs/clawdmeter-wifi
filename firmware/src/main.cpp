@@ -298,15 +298,10 @@ void loop() {
             }
         }
 
-        // PWR long-press (~1.5s) cycles display brightness; persisted to NVS.
-        // Short-press keeps its screen/animation cycling role on this fork.
-        if (power_hal_pwr_long_pressed()) {
-            if (!idle_consume_wake_press()) {
-                brightness_cycle();
-                ui_settings_refresh();  // keep the settings slider in sync
-            }
-        }
-        power_hal_pwr_released();  // drain the release edge (unused here)
+        // Brightness lives on the settings-screen slider; the PWR long-press
+        // has no action any more. Drain both edges so the flags don't go stale.
+        power_hal_pwr_long_pressed();
+        power_hal_pwr_released();
     }
 
     ble_state_t bs = ble_get_state();
