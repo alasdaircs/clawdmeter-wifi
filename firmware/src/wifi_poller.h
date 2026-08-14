@@ -30,3 +30,7 @@ int wifi_poller_get_fail_count(void);
 // retrying instead of surrendering to hotspot mode.
 bool wifi_poller_has_ever_connected(void);
 void wifi_poller_stop(void);
+
+// Inverse of wifi_poller_stop: clear the stop flag and reconnect with the
+// stored credentials (no-op status if none). Call after captive_portal_stop.
+void wifi_poller_restart(void);

@@ -116,18 +116,34 @@ void captive_portal_start(void) {
 
     s_dns.start(53, "*", WiFi.softAPIP());
 
-    s_server.on("/", HTTP_GET, handle_root);
-    s_server.on("/save", HTTP_POST, handle_save);
-    // Captive portal detection endpoints — Android and iOS check these URLs
-    // when joining an AP; by serving our form (or a redirect), the OS shows
-    // the "Sign into network" notification that opens the browser for the user.
-    s_server.on("/generate_204", HTTP_GET, []() {
-        s_server.sendHeader("Location", "http://192.168.4.1/");
-        s_server.send(302, "text/plain", "");
-    });
-    s_server.on("/hotspot-detect.html", HTTP_GET, handle_root);
-    s_server.onNotFound(handle_root);
+    // WebServer::on() appends a handler to an internal list that stop() never
+    // clears — register the routes once, or every start/stop cycle leaks a set.
+    static bool s_routes_registered = false;
+    if (!s_routes_registered) {
+        s_routes_registered = true;
+        s_server.on("/", HTTP_GET, handle_root);
+        s_server.on("/save", HTTP_POST, handle_save);
+        // Captive portal detection endpoints — Android and iOS check these URLs
+        // when joining an AP; by serving our form (or a redirect), the OS shows
+        // the "Sign into network" notification that opens the browser for the user.
+        s_server.on("/generate_204", HTTP_GET, []() {
+            s_server.sendHeader("Location", "http://192.168.4.1/");
+            s_server.send(302, "text/plain", "");
+        });
+        s_server.on("/hotspot-detect.html", HTTP_GET, handle_root);
+        s_server.onNotFound(handle_root);
+    }
     s_server.begin();
+}
+
+void captive_portal_stop(void) {
+    if (!s_active) return;
+    s_active = false;
+    s_server.stop();
+    s_dns.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);   // hand the radio back to the station-mode poller
+    Serial.println("portal: stopped");
 }
 
 void captive_portal_init(void) {

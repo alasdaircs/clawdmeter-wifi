@@ -168,6 +168,7 @@ static lv_obj_t* lbl_wifi_ssid_val;
 static lv_obj_t* lbl_wifi_pass_val;
 static lv_obj_t* lbl_wifi_token_val;
 static lv_obj_t* lbl_wifi_note;
+static lv_obj_t* lbl_wifi_btn;
 
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
@@ -637,10 +638,10 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lv_obj_clear_flag(btn_zone, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(btn_zone, wifi_hotspot_click_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t* btn_lbl = lv_label_create(btn_zone);
-    lv_label_set_text(btn_lbl, "Start Hotspot");
-    lv_obj_set_style_text_font(btn_lbl, L.bt_device_font, 0);
-    lv_obj_set_style_text_color(btn_lbl, COL_AMBER, 0);
+    lbl_wifi_btn = lv_label_create(btn_zone);
+    lv_label_set_text(lbl_wifi_btn, "Start Hotspot");
+    lv_obj_set_style_text_font(lbl_wifi_btn, L.bt_device_font, 0);
+    lv_obj_set_style_text_color(lbl_wifi_btn, COL_AMBER, 0);
 
     lbl_wifi_note = lv_label_create(wifi_container);
     lv_obj_set_style_text_font(lbl_wifi_note, L.bt_credit_1_font, 0);
@@ -1131,6 +1132,8 @@ void ui_update_wifi_creds(bool portal_active) {
     redact_token(token, buf, sizeof(buf));
     lv_label_set_text(lbl_wifi_token_val, buf);
 
+    lv_label_set_text(lbl_wifi_btn, portal_active ? "Stop Hotspot"
+                                                  : "Start Hotspot");
     lv_label_set_text(lbl_wifi_note, portal_active
         ? "Join Wi-Fi: ClawdMeter\nthen open 192.168.4.1"
         : "Configure via serial at 115200 baud");

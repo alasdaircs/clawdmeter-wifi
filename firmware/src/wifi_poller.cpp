@@ -480,3 +480,17 @@ void wifi_poller_stop(void) {
     WiFi.disconnect();
     Serial.println("wifi: stopped");
 }
+
+void wifi_poller_restart(void) {
+    s_stop_polling    = false;
+    s_fail_count      = 0;
+    s_poll_fail_count = 0;
+    s_auth_fail_count = 0;
+    s_last_poll       = 0;   // poll immediately once the link is back up
+    if (!provisioning_has_wifi()) {
+        s_status = WIFI_POLL_NO_CREDS;
+        Serial.println("wifi: no credentials, skipping");
+        return;
+    }
+    begin_connect();
+}

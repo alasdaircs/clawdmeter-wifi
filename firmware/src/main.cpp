@@ -320,22 +320,39 @@ void loop() {
         ui_update_battery(pct, charging);
     }
 
-    // Start hotspot: manual button on Wi-Fi screen, or 3 successive connect
-    // failures — but only while the stored credentials are unproven. Once
-    // they've connected successfully this boot, failures mean out-of-range /
-    // AP down, and the poller retries forever instead (portal is one-way
-    // until reboot, which stranded the device after a walk out of range).
-    if (!captive_portal_is_active()) {
+    // Hotspot toggle: the Wi-Fi screen button starts the portal, and while it
+    // is active the same button (now "Stop Hotspot") tears it down and resumes
+    // station polling. Auto-start on 3 successive connect failures — but only
+    // while the stored credentials are unproven. Once they've connected
+    // successfully this boot, failures mean out-of-range / AP down, and the
+    // poller retries forever instead (a one-way portal stranded the device
+    // after a walk out of range).
+    {
+        // A manual stop disarms the auto-fallback until reboot — otherwise
+        // unproven credentials would reopen the portal ~90s after the user
+        // explicitly dismissed it. The button still starts it on demand.
+        static bool hotspot_declined = false;
         bool manual = ui_hotspot_requested();
-        bool auto_fail = (wifi_poller_get_fail_count() >= 3) &&
-                         !wifi_poller_has_ever_connected();
-        if (manual || auto_fail) {
-            if (auto_fail) Serial.println("wifi: 3 failures, switching to hotspot");
-            wifi_poller_stop();
-            captive_portal_start();
-            ui_update_wifi_creds(true);
-            ui_set_nav_locked(true);
-            ui_show_screen(SCREEN_WIFI);
+        if (captive_portal_is_active()) {
+            if (manual) {
+                hotspot_declined = true;
+                captive_portal_stop();
+                wifi_poller_restart();
+                ui_update_wifi_creds(false);
+                ui_set_nav_locked(false);
+            }
+        } else {
+            bool auto_fail = !hotspot_declined &&
+                             (wifi_poller_get_fail_count() >= 3) &&
+                             !wifi_poller_has_ever_connected();
+            if (manual || auto_fail) {
+                if (auto_fail) Serial.println("wifi: 3 failures, switching to hotspot");
+                wifi_poller_stop();
+                captive_portal_start();
+                ui_update_wifi_creds(true);
+                ui_set_nav_locked(true);
+                ui_show_screen(SCREEN_WIFI);
+            }
         }
     }
 
