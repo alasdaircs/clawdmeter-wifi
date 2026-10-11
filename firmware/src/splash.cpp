@@ -167,14 +167,12 @@ void splash_init(lv_obj_t *parent) {
 #ifdef BOARD_HAS_PSRAM
     const uint32_t canvas_caps = MALLOC_CAP_SPIRAM;
 #else
-    // Without PSRAM the full 480×480 RGB565 canvas (460 KB) won't fit. Cap
-    // the canvas so the buffer stays under ~80 KB, leaving the rest of
-    // internal SRAM free for LVGL, NimBLE, and the audio/PMU stacks. The
-    // canvas is centered, so the cost is extra black border around the
-    // pixel art — not cropping.
+    // Without PSRAM a full-size canvas (460 KB) won't fit in internal SRAM.
+    // Render the art at 1 px per cell (20×20 = 800 B) and let LVGL upscale it
+    // with nearest-neighbour — identical look for pixel art, full screen size.
     const uint32_t canvas_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    const int MAX_CELL_NO_PSRAM = 10;  // 10*20=200; 200*200*2=78 KB
-    if (cell > MAX_CELL_NO_PSRAM) cell = MAX_CELL_NO_PSRAM;
+    const int upscale = cell;
+    cell = 1;
 #endif
 
     canvas_w = GRID * cell;
@@ -198,6 +196,10 @@ void splash_init(lv_obj_t *parent) {
 
     canvas = lv_canvas_create(splash_container);
     lv_canvas_set_buffer(canvas, canvas_buf, canvas_w, canvas_h, LV_COLOR_FORMAT_RGB565);
+#ifndef BOARD_HAS_PSRAM
+    lv_image_set_scale(canvas, 256 * upscale);
+    lv_image_set_antialias(canvas, false);
+#endif
     lv_obj_center(canvas);
 
     // Placeholder label (visible only when no animations are loaded)
