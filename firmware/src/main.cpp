@@ -29,12 +29,12 @@ static UsageData usage = {};
 // ---- LVGL draw buffers (partial render mode) ----
 // PSRAM-equipped boards (S3) can comfortably hold larger strips. PSRAM-free
 // boards (e.g. ESP32-C6) allocate from internal SRAM, so we shrink the strip
-// — 480×20 RGB565 = 19 KB × 2 buffers = 38 KB, fits beside everything else.
+// — 480×10 RGB565 = 9.6 KB × 2 buffers = 19 KB, leaving room for TLS.
 #ifdef BOARD_HAS_PSRAM
 #define BUF_LINES 40
 #define LV_BUF_CAPS (MALLOC_CAP_SPIRAM)
 #else
-#define BUF_LINES 20
+#define BUF_LINES 10
 #define LV_BUF_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #endif
 static uint16_t* buf1 = nullptr;
