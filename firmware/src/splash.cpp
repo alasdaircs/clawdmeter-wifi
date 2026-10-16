@@ -5,15 +5,16 @@
 #include "hal/board_caps.h"
 #include <Arduino.h>
 #include <string.h>
-#include <esp_heap_caps.h>
 
-// 20×20 grid. CELL sized so the canvas fits the smaller display dimension —
-// the canvas is square and centered, so on portrait or letterboxed panels
-// it leaves vertical margin rather than cropping.
+// 20×20 grid, painted at 1 px per cell into a 20×20 RGB565 buffer (800 B)
+// and upscaled by LVGL with nearest-neighbour sampling — cells come out as
+// solid cell×cell blocks, exactly as if painted at full size, without a
+// 460 KB full-size canvas. Same path on every board, PSRAM or not.
+// `cell` is the integer scale factor, sized so the canvas fits the smaller
+// display dimension — the canvas is square and centered, so on portrait or
+// letterboxed panels it leaves vertical margin rather than cropping.
 #define GRID         20
 static int  cell      = 24;        // recomputed in splash_init()
-static int  canvas_w  = GRID * 24;
-static int  canvas_h  = GRID * 24;
 
 // Background fallback when palette is missing
 #define COL_EMPTY    0x0000  // true black (matches THEME_BG)
@@ -23,7 +24,7 @@ LV_FONT_DECLARE(font_styrene_28);
 static lv_obj_t *splash_container = NULL;
 static lv_obj_t *canvas = NULL;
 static lv_obj_t *label_status = NULL;     // shown only when no animations loaded
-static uint16_t *canvas_buf = NULL;        // 480x480 RGB565 (PSRAM)
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t canvas_buf[GRID * GRID];  // 1 px per cell
 
 static uint16_t cur_anim = 0;
 static uint16_t cur_frame = 0;
@@ -71,21 +72,26 @@ static void resolve_group_lists(void) {
     }
 }
 
-static uint16_t *row_buf = NULL;   // scratch row, sized to canvas_w
+// Map one frame's palette indices to RGB565, one pixel per cell.
+static void paint_grid(uint16_t *dst, const uint8_t *cells, const uint16_t *palette) {
+    for (int i = 0; i < GRID * GRID; i++) {
+        uint8_t code = cells[i];
+        dst[i] = (palette && code < SPLASH_PALETTE_SIZE) ? palette[code] : COL_EMPTY;
+    }
+}
+
+// Shared setup for a 1-px-per-cell canvas shown at `scale`× (integer, so
+// every cell lands on whole pixels; antialiasing off keeps the edges hard).
+static lv_obj_t* create_scaled_canvas(lv_obj_t *parent, uint16_t *buf, int scale) {
+    lv_obj_t *c = lv_canvas_create(parent);
+    lv_canvas_set_buffer(c, buf, GRID, GRID, LV_COLOR_FORMAT_RGB565);
+    lv_image_set_scale(c, LV_SCALE_NONE * scale);
+    lv_image_set_antialias(c, false);
+    return c;
+}
 
 static void render_frame(const uint8_t *cells, const uint16_t *palette) {
-    if (!row_buf || !canvas_buf) return;
-    for (int gy = 0; gy < GRID; gy++) {
-        for (int gx = 0; gx < GRID; gx++) {
-            uint8_t code = cells[gy * GRID + gx];
-            uint16_t color = (palette && code < SPLASH_PALETTE_SIZE) ? palette[code] : COL_EMPTY;
-            uint16_t *p = &row_buf[gx * cell];
-            for (int i = 0; i < cell; i++) p[i] = color;
-        }
-        for (int dy = 0; dy < cell; dy++) {
-            memcpy(&canvas_buf[(gy * cell + dy) * canvas_w], row_buf, canvas_w * 2);
-        }
-    }
+    paint_grid(canvas_buf, cells, palette);
     if (canvas) lv_obj_invalidate(canvas);
 }
 
@@ -93,27 +99,14 @@ static void render_frame(const uint8_t *cells, const uint16_t *palette) {
 //      (e.g. the idle "sleeping" indicator). Self-contained — its own canvas and
 //      buffer, independent of the full-screen splash above. ----
 static lv_obj_t  *mini_canvas = NULL;
-static uint16_t  *mini_buf = NULL;
-static int        mini_cell = 0;
-static int        mini_w = 0;
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t mini_buf[GRID * GRID];  // 1 px per cell
 static const splash_anim_def_t *mini_anim = NULL;
 static uint16_t   mini_frame = 0;
 static uint32_t   mini_started = 0;
 
 static void mini_render(void) {
-    if (!mini_buf || !mini_anim) return;
-    const uint8_t *cells = mini_anim->frames[mini_frame];
-    const uint16_t *pal = mini_anim->palette;
-    for (int gy = 0; gy < GRID; gy++) {
-        for (int gx = 0; gx < GRID; gx++) {
-            uint8_t code = cells[gy * GRID + gx];
-            uint16_t color = (pal && code < SPLASH_PALETTE_SIZE) ? pal[code] : COL_EMPTY;
-            for (int dy = 0; dy < mini_cell; dy++) {
-                uint16_t *dst = &mini_buf[(gy * mini_cell + dy) * mini_w + gx * mini_cell];
-                for (int dx = 0; dx < mini_cell; dx++) dst[dx] = color;
-            }
-        }
-    }
+    if (!mini_anim) return;
+    paint_grid(mini_buf, mini_anim->frames[mini_frame], mini_anim->palette);
     if (mini_canvas) lv_obj_invalidate(mini_canvas);
 }
 
@@ -123,18 +116,9 @@ lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
         if (strcmp(splash_anims[i].name, anim_name) == 0) { mini_anim = &splash_anims[i]; break; }
     }
     if (!mini_anim) return NULL;
-    mini_cell = px / GRID;
+    int mini_cell = px / GRID;
     if (mini_cell < 1) mini_cell = 1;
-    mini_w = GRID * mini_cell;
-#ifdef BOARD_HAS_PSRAM
-    const uint32_t caps = MALLOC_CAP_SPIRAM;
-#else
-    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-#endif
-    mini_buf = (uint16_t*)heap_caps_malloc(mini_w * mini_w * 2, caps);
-    if (!mini_buf) return NULL;
-    mini_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(mini_canvas, mini_buf, mini_w, mini_w, LV_COLOR_FORMAT_RGB565);
+    mini_canvas = create_scaled_canvas(parent, mini_buf, mini_cell);
     mini_frame = 0;
     mini_started = millis();
     mini_render();
@@ -142,7 +126,7 @@ lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
 }
 
 void splash_mini_tick(void) {
-    if (!mini_buf || !mini_anim || mini_anim->frame_count == 0) return;
+    if (!mini_canvas || !mini_anim || mini_anim->frame_count == 0) return;
     if (millis() - mini_started < mini_anim->holds[mini_frame]) return;
     mini_started = millis();
     mini_frame = (mini_frame + 1) % mini_anim->frame_count;
@@ -151,9 +135,7 @@ void splash_mini_tick(void) {
 
 static void show_placeholder() {
     // Solid dark background + centered status label.
-    if (canvas_buf) {
-        for (int i = 0; i < canvas_w * canvas_h; i++) canvas_buf[i] = COL_EMPTY;
-    }
+    for (int i = 0; i < GRID * GRID; i++) canvas_buf[i] = COL_EMPTY;
     if (canvas) lv_obj_invalidate(canvas);
     if (label_status) lv_obj_clear_flag(label_status, LV_OBJ_FLAG_HIDDEN);
 }
@@ -164,27 +146,6 @@ void splash_init(lv_obj_t *parent) {
     cell     = min_dim / GRID;       // fits within the smaller display dimension
     if (cell < 4) cell = 4;
 
-#ifdef BOARD_HAS_PSRAM
-    const uint32_t canvas_caps = MALLOC_CAP_SPIRAM;
-#else
-    // Without PSRAM a full-size canvas (460 KB) won't fit in internal SRAM.
-    // Render the art at 1 px per cell (20×20 = 800 B) and let LVGL upscale it
-    // with nearest-neighbour — identical look for pixel art, full screen size.
-    const uint32_t canvas_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    const int upscale = cell;
-    cell = 1;
-#endif
-
-    canvas_w = GRID * cell;
-    canvas_h = GRID * cell;
-
-    canvas_buf = (uint16_t*)heap_caps_malloc(canvas_w * canvas_h * 2, canvas_caps);
-    row_buf    = (uint16_t*)heap_caps_malloc(canvas_w * 2,             canvas_caps);
-    if (!canvas_buf || !row_buf) {
-        Serial.println("splash: failed to alloc canvas buffer");
-        return;
-    }
-
     splash_container = lv_obj_create(parent);
     lv_obj_set_size(splash_container, c.width, c.height);
     lv_obj_set_pos(splash_container, 0, 0);
@@ -194,12 +155,7 @@ void splash_init(lv_obj_t *parent) {
     lv_obj_set_style_pad_all(splash_container, 0, 0);
     lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_SCROLLABLE);
 
-    canvas = lv_canvas_create(splash_container);
-    lv_canvas_set_buffer(canvas, canvas_buf, canvas_w, canvas_h, LV_COLOR_FORMAT_RGB565);
-#ifndef BOARD_HAS_PSRAM
-    lv_image_set_scale(canvas, 256 * upscale);
-    lv_image_set_antialias(canvas, false);
-#endif
+    canvas = create_scaled_canvas(splash_container, canvas_buf, cell);
     lv_obj_center(canvas);
 
     // Placeholder label (visible only when no animations are loaded)

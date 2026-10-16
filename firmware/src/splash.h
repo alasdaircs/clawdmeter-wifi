@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <lvgl.h>
 
-// Initialize splash module. Creates the canvas widget inside `parent` and
-// allocates the 480x480 pixel buffer (PSRAM).
+// Initialize splash module. Creates the canvas widget inside `parent`: a
+// 20×20 (1 px per cell) buffer that LVGL scales up to fit the display.
 void splash_init(lv_obj_t *parent);
 
 // Advance animation frame if hold time elapsed. Call from main loop.
@@ -30,7 +30,8 @@ lv_obj_t* splash_get_root(void);
 // Mini animated creature for embedding elsewhere (e.g. the idle screen).
 // Renders the named claudepix animation (e.g. "expression sleep") at ~px×px
 // inside `parent`; returns the canvas object (position it with lv_obj_align) or
-// NULL if the animation isn't found / allocation fails. Drive it with
-// splash_mini_tick(). One mini creature at a time.
+// NULL if the animation isn't found. The object's layout size is the 20×20
+// source; the scaled visual extends around its centre, so align it by centre.
+// Drive it with splash_mini_tick(). One mini creature at a time.
 lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px);
 void splash_mini_tick(void);
