@@ -15,6 +15,7 @@
 #include "provisioning.h"
 #include "wifi_poller.h"
 #include "captive_portal.h"
+#include "heap_log.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -157,6 +158,9 @@ static void check_serial_cmd() {
                 else if (strcmp(cmd_buf, "chime off") == 0) { chime_pref_set(false); ui_settings_refresh(); }
                 else if (strcmp(cmd_buf, "chime") == 0)
                     Serial.printf("chime: %s\n", chime_pref_get() ? "on" : "off");
+#ifdef HEAP_DEBUG
+                else if (strcmp(cmd_buf, "heap") == 0) { HEAP_LOG("cmd"); HEAP_LOG_LVGL("cmd"); }
+#endif
                 else {
                     provisioning_handle_cmd(cmd_buf);
                     ui_update_wifi_creds(captive_portal_is_active());
@@ -211,6 +215,8 @@ void setup() {
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_add_event_cb(disp, rounder_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
+    HEAP_LOG("lvgl bufs");
+
     lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, my_touch_cb);
@@ -219,8 +225,11 @@ void setup() {
     input_hal_init();
     wifi_poller_init();
     captive_portal_init();
+    HEAP_LOG("pre ui_init");
 
     ui_init();
+    HEAP_LOG("post ui_init");
+    HEAP_LOG_LVGL("post ui_init");
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_update_wifi_creds(captive_portal_is_active());
@@ -237,6 +246,14 @@ void setup() {
 static ble_state_t last_ble_state = BLE_STATE_INIT;
 
 void loop() {
+#ifdef HEAP_DEBUG
+    static uint32_t heap_log_ms = 0;
+    if (millis() - heap_log_ms >= 60000) {
+        heap_log_ms = millis();
+        HEAP_LOG("loop");
+        HEAP_LOG_LVGL("loop");
+    }
+#endif
     idle_tick();
     lv_timer_handler();
     wifi_poller_tick();
