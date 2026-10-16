@@ -1,5 +1,6 @@
 #include "wifi_poller.h"
 #include "provisioning.h"
+#include "heap_log.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -117,6 +118,7 @@ static int                         s_fail_count     = 0;  // Wi-Fi connect fails
 static bool                        s_ever_connected = false; // creds have worked since boot; Core 1 only
 static volatile int                s_poll_fail_count = 0; // consecutive poll fails; written Core 0, read Core 1 (drives backoff)
 static int                         s_auth_fail_count = 0; // consecutive 401s; Core 0 only (drives stop-after-N)
+static int                         s_poll_n          = 0; // polls attempted since boot; Core 0 only (HEAP_DEBUG tags)
 
 // Route large mbedTLS allocations (SSL record buffers, handshake state) to PSRAM,
 // leaving internal SRAM free for the hardware AES engine's DMA descriptors.
@@ -214,6 +216,7 @@ static void do_poll() {
     }
 
     Serial.println("wifi: poll start");
+    HEAP_LOG_N("poll start", ++s_poll_n);
 
     WiFiClientSecure tls;
     tls.setCACert(GTS_ROOT_R4_CA);
@@ -245,6 +248,7 @@ static void do_poll() {
 
     int code = http.POST(body);
     Serial.printf("wifi: HTTP %d\n", code);
+    HEAP_LOG_N("poll post", s_poll_n);  // TLS session still open
 
     // Diagnostic: dump the error body on any unexpected non-200. We skip 429
     // because its body is a generic `rate_limit_error` that carries no extra
@@ -356,6 +360,8 @@ static void poll_task_fn(void* param) {
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         do_poll();
+        HEAP_LOG_N("poll done", s_poll_n);  // WiFiClientSecure destroyed
+        HEAP_LOG_STACK("poll task");
         s_poll_busy = false;
     }
 }
