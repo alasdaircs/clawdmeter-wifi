@@ -30,7 +30,9 @@ static UsageData usage = {};
 // PSRAM-equipped boards (S3) can comfortably hold larger strips. PSRAM-free
 // boards (e.g. ESP32-C6) allocate from internal SRAM, so we shrink the strip
 // — 480×20 RGB565 = 19 KB × 2 buffers = 38 KB, fits beside everything else
-// now that the splash and mini-creature canvases are 800 B each.
+// now that the splash and mini creature draw without pixel buffers.
+// BUF_LINES is the strip height: LVGL renders and flushes a dirty area at
+// most this many rows at a time.
 #ifdef BOARD_HAS_PSRAM
 #define BUF_LINES 40
 #define LV_BUF_CAPS (MALLOC_CAP_SPIRAM)

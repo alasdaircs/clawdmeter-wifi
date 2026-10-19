@@ -60,7 +60,7 @@ firmware/src/
     template/               — copy this to bootstrap a new port
   main.cpp                  — setup() + loop(): HAL calls only, zero #ifdef BOARD_*
   ui.{h,cpp}                — 3-screen UI (splash, usage, bluetooth). compute_layout() picks fonts/positions from board_caps() (responsive — current breakpoint: H >= 460 → large, else compact)
-  splash.{h,cpp}            — 20×20 pixel-art engine. Painted 1 px/cell into a 20×20 canvas, LVGL-scaled ×CELL (CELL = min(W,H)/20), centered.
+  splash.{h,cpp}            — 20×20 pixel-art engine. Cells drawn as filled rectangles per same-colour run (no pixel buffer), CELL = min(W,H)/20, centered; a frame change invalidates only the changed cells.
   ble.{h,cpp}               — NimBLE peripheral: custom data service + HID keyboard
   data.h                    — UsageData struct
   icons.h                   — icon arrays. Battery (5×) are RGB565A8 with alpha; rest are raw RGB565.

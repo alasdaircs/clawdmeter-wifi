@@ -6,13 +6,16 @@
 #include <Arduino.h>
 #include <string.h>
 
-// 20×20 grid, painted at 1 px per cell into a 20×20 RGB565 buffer (800 B)
-// and upscaled by LVGL with nearest-neighbour sampling — cells come out as
-// solid cell×cell blocks, exactly as if painted at full size, without a
-// 460 KB full-size canvas. Same path on every board, PSRAM or not.
-// `cell` is the integer scale factor, sized so the canvas fits the smaller
-// display dimension — the canvas is square and centered, so on portrait or
-// letterboxed panels it leaves vertical margin rather than cropping.
+// 20×20 grid, drawn straight from the frame's palette indices as filled
+// rectangles in an LV_EVENT_DRAW_MAIN handler — one fill per run of
+// same-coloured cells in a row, clipped to the strip being rendered. No pixel
+// buffer at all, so the same path runs on every board, PSRAM or not, and cells
+// land on exact cell×cell blocks. (LVGL image scaling was tried first: 9.5's
+// scale-only path stretches the last source column and rounds half a cell off,
+// and per-pixel sampling cost ~50% more CPU than this.)
+// `cell` is the block size, sized so the grid fits the smaller display
+// dimension — the grid is square and centered, so on portrait or letterboxed
+// panels it leaves vertical margin rather than cropping.
 #define GRID         20
 static int  cell      = 24;        // recomputed in splash_init()
 
@@ -22,9 +25,7 @@ static int  cell      = 24;        // recomputed in splash_init()
 LV_FONT_DECLARE(font_styrene_28);
 
 static lv_obj_t *splash_container = NULL;
-static lv_obj_t *canvas = NULL;
 static lv_obj_t *label_status = NULL;     // shown only when no animations loaded
-alignas(LV_DRAW_BUF_ALIGN) static uint16_t canvas_buf[GRID * GRID];  // 1 px per cell
 
 static uint16_t cur_anim = 0;
 static uint16_t cur_frame = 0;
@@ -72,42 +73,120 @@ static void resolve_group_lists(void) {
     }
 }
 
-// Map one frame's palette indices to RGB565, one pixel per cell.
-static void paint_grid(uint16_t *dst, const uint8_t *cells, const uint16_t *palette) {
-    for (int i = 0; i < GRID * GRID; i++) {
-        uint8_t code = cells[i];
-        dst[i] = (palette && code < SPLASH_PALETTE_SIZE) ? palette[code] : COL_EMPTY;
+// A drawn grid: the object, the frame it shows and its block size. The frame
+// pointers reference the const animation tables, so nothing is copied.
+struct GridView {
+    lv_obj_t       *obj;
+    const uint8_t  *cells;    // GRID*GRID palette indices, or NULL for blank
+    const uint16_t *palette;  // SPLASH_PALETTE_SIZE RGB565 entries
+    int             cell;     // px per cell
+};
+
+static GridView splash_grid = { NULL, NULL, NULL, 24 };
+
+static inline uint16_t cell_colour(const uint16_t *palette, uint8_t code) {
+    return (palette && code < SPLASH_PALETTE_SIZE) ? palette[code] : COL_EMPTY;
+}
+
+static inline lv_color_t rgb565_to_color(uint16_t c) {
+    uint8_t r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
+    return lv_color_make((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
+}
+
+// The object's own opaque COL_EMPTY background is drawn before this runs, so
+// only non-empty runs need a fill. Rows outside the current strip are skipped.
+static void grid_draw_cb(lv_event_t *e) {
+    GridView *g = (GridView *)lv_event_get_user_data(e);
+    if (!g->cells) return;
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t box;
+    lv_obj_get_coords(g->obj, &box);
+    const lv_area_t &clip = layer->_clip_area;
+
+    lv_draw_fill_dsc_t d;
+    lv_draw_fill_dsc_init(&d);
+    d.opa = LV_OPA_COVER;
+
+    for (int r = 0; r < GRID; r++) {
+        lv_area_t a;
+        a.y1 = box.y1 + r * g->cell;
+        a.y2 = a.y1 + g->cell - 1;
+        if (a.y2 < clip.y1 || a.y1 > clip.y2) continue;
+        const uint8_t *row = g->cells + r * GRID;
+        for (int c = 0; c < GRID; ) {
+            uint16_t col = cell_colour(g->palette, row[c]);
+            int end = c + 1;
+            while (end < GRID && cell_colour(g->palette, row[end]) == col) end++;
+            if (col != COL_EMPTY) {
+                a.x1 = box.x1 + c * g->cell;
+                a.x2 = box.x1 + end * g->cell - 1;
+                d.color = rgb565_to_color(col);
+                lv_draw_fill(layer, &d, &a);
+            }
+            c = end;
+        }
     }
 }
 
-// Shared setup for a 1-px-per-cell canvas shown at `scale`× (integer, so
-// every cell lands on whole pixels; antialiasing off keeps the edges hard).
-static lv_obj_t* create_scaled_canvas(lv_obj_t *parent, uint16_t *buf, int scale) {
-    lv_obj_t *c = lv_canvas_create(parent);
-    lv_canvas_set_buffer(c, buf, GRID, GRID, LV_COLOR_FORMAT_RGB565);
-    lv_image_set_scale(c, LV_SCALE_NONE * scale);
-    lv_image_set_antialias(c, false);
-    return c;
+// An opaque COL_EMPTY square of GRID*cell_px that draws `g` and ignores input
+// (taps and swipes fall through to the parent).
+static void grid_create(GridView *g, lv_obj_t *parent, int cell_px) {
+    g->cell = cell_px;
+    g->obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(g->obj);
+    lv_obj_set_size(g->obj, GRID * cell_px, GRID * cell_px);
+    lv_obj_set_style_bg_color(g->obj, rgb565_to_color(COL_EMPTY), 0);
+    lv_obj_set_style_bg_opa(g->obj, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g->obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(g->obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(g->obj, grid_draw_cb, LV_EVENT_DRAW_MAIN, g);
+}
+
+// Point `g` at a new frame and invalidate only the bounding box of the cells
+// whose colour changed, so a blink redraws a couple of strips, not the panel.
+static void grid_set_frame(GridView *g, const uint8_t *cells, const uint16_t *palette) {
+    const uint8_t  *old_cells   = g->cells;
+    const uint16_t *old_palette = g->palette;
+    g->cells   = cells;
+    g->palette = palette;
+    if (!g->obj) return;
+    if (!old_cells || !cells) { lv_obj_invalidate(g->obj); return; }
+
+    int r1 = GRID, r2 = -1, c1 = GRID, c2 = -1;
+    for (int i = 0; i < GRID * GRID; i++) {
+        if (cell_colour(old_palette, old_cells[i]) == cell_colour(palette, cells[i])) continue;
+        int r = i / GRID, c = i % GRID;
+        if (r < r1) r1 = r;
+        if (r > r2) r2 = r;
+        if (c < c1) c1 = c;
+        if (c > c2) c2 = c;
+    }
+    if (r2 < 0) return;  // identical frame
+
+    lv_area_t box, dirty;
+    lv_obj_get_coords(g->obj, &box);
+    dirty.x1 = box.x1 + c1 * g->cell;
+    dirty.x2 = box.x1 + (c2 + 1) * g->cell - 1;
+    dirty.y1 = box.y1 + r1 * g->cell;
+    dirty.y2 = box.y1 + (r2 + 1) * g->cell - 1;
+    lv_obj_invalidate_area(g->obj, &dirty);
 }
 
 static void render_frame(const uint8_t *cells, const uint16_t *palette) {
-    paint_grid(canvas_buf, cells, palette);
-    if (canvas) lv_obj_invalidate(canvas);
+    grid_set_frame(&splash_grid, cells, palette);
 }
 
 // ---- Mini creature: a small animated creature for embedding in other screens
-//      (e.g. the idle "sleeping" indicator). Self-contained — its own canvas and
-//      buffer, independent of the full-screen splash above. ----
-static lv_obj_t  *mini_canvas = NULL;
-alignas(LV_DRAW_BUF_ALIGN) static uint16_t mini_buf[GRID * GRID];  // 1 px per cell
+//      (e.g. the idle "sleeping" indicator). Self-contained — its own grid
+//      object, independent of the full-screen splash above. ----
+static GridView   mini_grid = { NULL, NULL, NULL, 8 };
 static const splash_anim_def_t *mini_anim = NULL;
 static uint16_t   mini_frame = 0;
 static uint32_t   mini_started = 0;
 
 static void mini_render(void) {
     if (!mini_anim) return;
-    paint_grid(mini_buf, mini_anim->frames[mini_frame], mini_anim->palette);
-    if (mini_canvas) lv_obj_invalidate(mini_canvas);
+    grid_set_frame(&mini_grid, mini_anim->frames[mini_frame], mini_anim->palette);
 }
 
 lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
@@ -118,15 +197,15 @@ lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
     if (!mini_anim) return NULL;
     int mini_cell = px / GRID;
     if (mini_cell < 1) mini_cell = 1;
-    mini_canvas = create_scaled_canvas(parent, mini_buf, mini_cell);
+    grid_create(&mini_grid, parent, mini_cell);
     mini_frame = 0;
     mini_started = millis();
     mini_render();
-    return mini_canvas;
+    return mini_grid.obj;
 }
 
 void splash_mini_tick(void) {
-    if (!mini_canvas || !mini_anim || mini_anim->frame_count == 0) return;
+    if (!mini_grid.obj || !mini_anim || mini_anim->frame_count == 0) return;
     if (millis() - mini_started < mini_anim->holds[mini_frame]) return;
     mini_started = millis();
     mini_frame = (mini_frame + 1) % mini_anim->frame_count;
@@ -135,8 +214,7 @@ void splash_mini_tick(void) {
 
 static void show_placeholder() {
     // Solid dark background + centered status label.
-    for (int i = 0; i < GRID * GRID; i++) canvas_buf[i] = COL_EMPTY;
-    if (canvas) lv_obj_invalidate(canvas);
+    render_frame(NULL, NULL);
     if (label_status) lv_obj_clear_flag(label_status, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -155,8 +233,8 @@ void splash_init(lv_obj_t *parent) {
     lv_obj_set_style_pad_all(splash_container, 0, 0);
     lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_SCROLLABLE);
 
-    canvas = create_scaled_canvas(splash_container, canvas_buf, cell);
-    lv_obj_center(canvas);
+    grid_create(&splash_grid, splash_container, cell);
+    lv_obj_center(splash_grid.obj);
 
     // Placeholder label (visible only when no animations are loaded)
     label_status = lv_label_create(splash_container);
