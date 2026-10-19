@@ -23,13 +23,14 @@ env:
   PYTHON_VERSION: "3.13"
 
 jobs:
-  # Read the env list from platformio.ini so a new board port is picked up
-  # by CI automatically — adding an [env:...] block is all it takes.
+  # Read the env list (and each env's `board =`) from platformio.ini so a new
+  # board port is picked up by CI automatically — adding an [env:...] block
+  # is all it takes.
   envs:
     name: list envs
     runs-on: ubuntu-latest
     outputs:
-      envs: ${{ steps.list.outputs.envs }}
+      matrix: ${{ steps.list.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,9 +38,13 @@ jobs:
           sparse-checkout-cone-mode: false
       - id: list
         run: |
-          envs=$(sed -n 's/^\[env:\([^]]*\)\].*/\1/p' firmware/platformio.ini | tr -d '\r' | jq -Rsc 'split("\n") | map(select(length > 0))')
-          echo "envs=$envs" >> "$GITHUB_OUTPUT"
-          echo "Envs: $envs"
+          matrix=$(awk '
+            /^\[env:/ { sub(/^\[env:/, ""); sub(/\].*/, ""); env = $0 }
+            /^board[ \t]*=/ && env != "" { sub(/^board[ \t]*=[ \t]*/, ""); print env, $0 }
+          ' firmware/platformio.ini | tr -d '\r' |
+            jq -Rsc '{include: split("\n") | map(select(length > 0) | split(" ") | {env: .[0], board: .[1]})}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix" | jq .
 
   build:
     name: build ${{ matrix.env }}
@@ -48,8 +53,7 @@ jobs:
     strategy:
       # Report every board even when one of them breaks.
       fail-fast: false
-      matrix:
-        env: ${{ fromJSON(needs.envs.outputs.envs) }}
+      matrix: ${{ fromJSON(needs.envs.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -59,10 +63,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # ~/.platformio holds the pioarduino platform, toolchains and Arduino
-      # libs (several GB, the bulk of a cold build). Keyed per env because
-      # each MCU pulls a different toolchain set, and on the exact Python
-      # version because the platform builds its own venv (~/.platformio/penv).
-      # Download archives are excluded — the unpacked copies are what's used.
+      # libs (~2 GB compressed, the bulk of a cold build). Keyed per board
+      # (MCU), not per env: envs on the same chip download identical
+      # packages, and one copy per chip keeps us well under the 10 GB repo
+      # cache limit. Also keyed on the exact Python version because the
+      # platform builds its own venv (~/.platformio/penv). Download archives
+      # are excluded — the unpacked copies are what's used.
       - uses: actions/cache@v6
         with:
           path: |
@@ -70,7 +76,7 @@ jobs:
             !~/.platformio/dist
             !~/.platformio/.cache
             ~/.cache/pip
-          key: pio-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ matrix.env }}-${{ hashFiles('firmware/platformio.ini') }}
+          key: pio-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ matrix.board }}-${{ hashFiles('firmware/platformio.ini') }}
 
       - name: Install PlatformIO
         run: pip install "platformio==${PLATFORMIO_VERSION}"
