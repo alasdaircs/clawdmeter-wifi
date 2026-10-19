@@ -160,6 +160,7 @@ static void check_serial_cmd() {
                     Serial.printf("chime: %s\n", chime_pref_get() ? "on" : "off");
 #ifdef HEAP_DEBUG
                 else if (strcmp(cmd_buf, "heap") == 0) { HEAP_LOG("cmd"); HEAP_LOG_LVGL("cmd"); }
+                else if (strcmp(cmd_buf, "cpu") == 0) CPU_LOG("cmd");
 #endif
                 else {
                     provisioning_handle_cmd(cmd_buf);
@@ -230,6 +231,7 @@ void setup() {
     ui_init();
     HEAP_LOG("post ui_init");
     HEAP_LOG_LVGL("post ui_init");
+    CPU_LOG("boot");
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_update_wifi_creds(captive_portal_is_active());
@@ -252,6 +254,7 @@ void loop() {
         heap_log_ms = millis();
         HEAP_LOG("loop");
         HEAP_LOG_LVGL("loop");
+        CPU_LOG("loop");
     }
 #endif
     idle_tick();
