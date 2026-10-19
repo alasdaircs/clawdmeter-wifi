@@ -89,6 +89,8 @@ If `pio` isn't on PATH: try `~/.platformio/penv/bin/pio` (Linux/macOS pio instal
 
 Device path differs by OS: `/dev/cu.usbmodem*` on macOS, `/dev/ttyACM0` on Linux. Both expose the ESP32-S3 native USB-JTAG (no boot-mode dance needed).
 
+**CI:** `.github/workflows/build.yml` builds every `[env:...]` in `platformio.ini` (list read from the file — a new board env is picked up automatically) on pushes/PRs to `wifi-native`. Build-only, no hardware. Each run uploads `firmware-<env>` artifacts (`firmware.bin` for 0x10000, `firmware.factory.bin` for 0x0) kept 14 days; RAM/Flash usage lands in the run summary.
+
 ## QA your own UI changes — don't ask the user
 
 The firmware ships a `screenshot` serial command that dumps the LVGL framebuffer. `./screenshot.sh out.png [port]` captures a PNG sized to the active display (480×480 or 368×448). **Use this on every UI iteration** — Read the PNG with the Read tool, verify the change visually, iterate. Script auto-picks the macOS/Linux default port and falls back to pio's bundled Python if pyserial isn't on the system Python.
