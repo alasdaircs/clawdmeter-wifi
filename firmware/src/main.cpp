@@ -38,7 +38,9 @@ static UsageData usage = {};
 #define BUF_LINES 40
 #define LV_BUF_CAPS (MALLOC_CAP_SPIRAM)
 #else
+#ifndef BUF_LINES   // test builds override with -DBUF_LINES=10
 #define BUF_LINES 20
+#endif
 #define LV_BUF_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #endif
 static uint16_t* buf1 = nullptr;
