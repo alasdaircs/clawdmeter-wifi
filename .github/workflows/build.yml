@@ -109,3 +109,36 @@ jobs:
             firmware/.pio/build/${{ matrix.env }}/partitions.bin
           if-no-files-found: error
           retention-days: 14
+
+  # The opt-in diagnostics (-DHEAP_DEBUG, firmware/src/heap_log.h) compile to
+  # nothing in the builds above, so build them once here to stop them rotting.
+  # The C6 is the board they exist for, and being single-core it also covers
+  # cpu_log's portNUM_PROCESSORS == 1 path. Compile check only, no artifact.
+  build-heap-debug:
+    name: build waveshare_amoled_216_c6 (HEAP_DEBUG)
+    runs-on: ubuntu-latest
+    env:
+      PLATFORMIO_BUILD_FLAGS: -DHEAP_DEBUG
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Restore only: the matrix job for the same board saves this key.
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.platformio
+            !~/.platformio/dist
+            !~/.platformio/.cache
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-esp32-c6-devkitc-1-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install "platformio==${PLATFORMIO_VERSION}"
+
+      - name: Build
+        run: pio run -d firmware -e waveshare_amoled_216_c6

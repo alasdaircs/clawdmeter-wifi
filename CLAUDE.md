@@ -89,7 +89,7 @@ If `pio` isn't on PATH: try `~/.platformio/penv/bin/pio` (Linux/macOS pio instal
 
 Device path differs by OS: `/dev/cu.usbmodem*` on macOS, `/dev/ttyACM0` on Linux. Both expose the ESP32-S3 native USB-JTAG (no boot-mode dance needed).
 
-**CI:** `.github/workflows/build.yml` builds every `[env:...]` in `platformio.ini` (list read from the file — a new board env is picked up automatically) on pushes/PRs to `wifi-native`. Build-only, no hardware. Each run uploads `firmware-<env>` artifacts (`firmware.bin` for 0x10000, `firmware.factory.bin` for 0x0) kept 14 days; RAM/Flash usage lands in the run summary.
+**CI:** `.github/workflows/build.yml` builds every `[env:...]` in `platformio.ini` (list read from the file — a new board env is picked up automatically) on pushes/PRs to `wifi-native`. Build-only, no hardware. Each run uploads `firmware-<env>` artifacts (`firmware.bin` for 0x10000, `firmware.factory.bin` for 0x0) kept 14 days; RAM/Flash usage lands in the run summary. One extra job compiles `waveshare_amoled_216_c6` with `-DHEAP_DEBUG` so the opt-in heap/CPU logging (`heap_log.h`) keeps building.
 
 ## QA your own UI changes — don't ask the user
 
