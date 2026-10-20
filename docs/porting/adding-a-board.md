@@ -11,8 +11,10 @@ gap in the HAL — open an issue.
 At minimum:
 
 - An **ESP32-S3** (other ESP32 family members may work; this is what the
-  upstream firmware is tested on). OPI PSRAM is **required** — partial
-  flush buffers and the splash canvas are allocated from PSRAM.
+  upstream firmware is tested on). OPI PSRAM is recommended — the
+  partial flush buffers come from PSRAM when it's there. Without it
+  (e.g. ESP32-C6) they shrink to fit internal SRAM and screenshot capture
+  is unavailable; see `BOARD_HAS_PSRAM` in `capability-flags.md`.
 - A QSPI **AMOLED panel** with a driver supported by
   [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX)
   (CO5300, SH8601, NV3041A, etc.). Other interfaces aren't supported yet.
