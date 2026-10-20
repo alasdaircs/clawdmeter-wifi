@@ -2,7 +2,7 @@
 #include "board.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include <TouchDrvCSTXXX.hpp>
+#include <TouchDrvCST.hpp>
 
 static TouchDrvCST92xx touch;
 
@@ -35,12 +35,12 @@ void touch_hal_init(void) {
 void touch_hal_read(uint16_t* x, uint16_t* y, bool* pressed) {
     if (touch_data_ready) {
         touch_data_ready = false;
-        int16_t tx[5], ty[5];
-        uint8_t n = touch.getPoint(tx, ty, touch.getSupportTouchPoint());
-        if (n > 0) {
+        const TouchPoints& pts = touch.getTouchPoints();
+        if (pts.hasPoints()) {
+            const TouchPoint& pt = pts.getPoint(0);
             touch_pressed = true;
-            touch_x = (uint16_t)tx[0];
-            touch_y = (uint16_t)ty[0];
+            touch_x = (uint16_t)pt.x;
+            touch_y = (uint16_t)pt.y;
         } else {
             touch_pressed = false;
         }
