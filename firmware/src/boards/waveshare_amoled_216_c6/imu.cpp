@@ -2,7 +2,7 @@
 #include "board.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include <SensorQMI8658.hpp>
+#include <ImuDrv.hpp>
 
 // QMI8658 is populated on the 2.16 carrier PCB but rotation is disabled
 // on the C6 build (BOARD_HAS_ROTATION=0). We still initialize the device
