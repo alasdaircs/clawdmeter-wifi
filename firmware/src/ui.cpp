@@ -272,8 +272,8 @@ static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_set_style_pad_right(panel, 16, 0);
     lv_obj_set_style_pad_top(panel, 12, 0);
     lv_obj_set_style_pad_bottom(panel, 12, 0);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_scrollable(panel, false);
+    lv_obj_set_event_bubble(panel, true);
     return panel;
 }
 
@@ -367,7 +367,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(usage_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(usage_container, 0, 0);
     lv_obj_set_style_pad_all(usage_container, 0, 0);
-    lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(usage_container, false);
     lv_obj_add_event_cb(usage_container, global_click_cb, LV_EVENT_CLICKED, NULL);
 
     lbl_title = lv_label_create(usage_container);
@@ -384,8 +384,8 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(panels_group, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(panels_group, 0, 0);
     lv_obj_set_style_pad_all(panels_group, 0, 0);
-    lv_obj_clear_flag(panels_group, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(panels_group, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_scrollable(panels_group, false);
+    lv_obj_set_event_bubble(panels_group, true);
 
     panel_session = make_usage_panel(panels_group, L.content_y, "Current",
                      &lbl_session_pct, &lbl_session_label,
@@ -397,20 +397,20 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_label_set_text(lbl_session_pct_sym, "%");
     lv_obj_set_style_text_font(lbl_session_pct_sym, &font_styrene_28, 0);
     lv_obj_set_style_text_color(lbl_session_pct_sym, COL_TEXT, 0);
-    lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lbl_session_pct_sym, true);
 
     lbl_spending_desc = lv_label_create(panel_session);
     lv_label_set_text(lbl_spending_desc, "of your monthly budget");
     lv_obj_set_style_text_font(lbl_spending_desc, &font_styrene_28, 0);
     lv_obj_set_style_text_color(lbl_spending_desc, COL_DIM, 0);
     lv_obj_set_pos(lbl_spending_desc, 0, L.usage_reset_y);
-    lv_obj_add_flag(lbl_spending_desc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lbl_spending_desc, true);
 
     lbl_spending_status = lv_label_create(panel_session);
     lv_label_set_text(lbl_spending_status, "");
     lv_obj_set_style_text_font(lbl_spending_status, &font_styrene_16, 0);
     lv_obj_set_pos(lbl_spending_status, 0, L.usage_reset_y + 20);
-    lv_obj_add_flag(lbl_spending_status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lbl_spending_status, true);
 
     panel_weekly = make_usage_panel(panels_group,
                      L.content_y + L.usage_panel_h + L.usage_panel_gap, "Weekly",
@@ -428,11 +428,11 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(stale_group, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(stale_group, 0, 0);
     lv_obj_set_style_pad_all(stale_group, 0, 0);
-    lv_obj_clear_flag(stale_group, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(stale_group, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_scrollable(stale_group, false);
+    lv_obj_set_event_bubble(stale_group, true);
     lv_obj_t* creature = splash_mini_create(stale_group, "expression sleep", 160);
     if (creature) lv_obj_align(creature, LV_ALIGN_CENTER, 0, -20);
-    lv_obj_add_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(stale_group, true);
 
     lbl_anim = lv_label_create(usage_container);
     lv_label_set_text(lbl_anim, "");
@@ -448,7 +448,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_set_width(lbl_status, L.content_w);
     lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_status, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lbl_status, true);
 }
 
 // ======== Settings Screen ========
@@ -479,7 +479,7 @@ static void init_settings_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(settings_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(settings_container, 0, 0);
     lv_obj_set_style_pad_all(settings_container, 0, 0);
-    lv_obj_clear_flag(settings_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(settings_container, false);
     lv_obj_add_event_cb(settings_container, global_click_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* title = lv_label_create(settings_container);
@@ -492,7 +492,7 @@ static void init_settings_screen(lv_obj_t* scr) {
     // inside the panel must not cycle the screen mid-adjustment.
     lv_obj_t* p1 = make_panel(settings_container, L.margin, L.content_y,
                               L.content_w, L.usage_panel_h);
-    lv_obj_clear_flag(p1, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_event_bubble(p1, false);
 
     lv_obj_t* lbl_b = lv_label_create(p1);
     lv_label_set_text(lbl_b, "Brightness");
@@ -517,7 +517,7 @@ static void init_settings_screen(lv_obj_t* scr) {
     lv_obj_set_ext_click_area(settings_slider, 24);
     // A horizontal drag here is brightness adjustment, not a page swipe —
     // keep the gesture from bubbling to the screen-level swipe handler.
-    lv_obj_clear_flag(settings_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_gesture_bubble(settings_slider, false);
     lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(settings_slider, brt_slider_cb, LV_EVENT_RELEASED, NULL);
 
@@ -525,7 +525,7 @@ static void init_settings_screen(lv_obj_t* scr) {
     lv_obj_t* p2 = make_panel(settings_container, L.margin,
                               L.content_y + L.usage_panel_h + L.usage_panel_gap,
                               L.content_w, L.usage_panel_h);
-    lv_obj_clear_flag(p2, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_event_bubble(p2, false);
 
     // Top-aligned to mirror the brightness panel's layout.
     lv_obj_t* lbl_c = lv_label_create(p2);
@@ -545,13 +545,13 @@ static void init_settings_screen(lv_obj_t* scr) {
     lv_obj_align(chime_switch, LV_ALIGN_TOP_RIGHT, 0, -4);
     lv_obj_set_style_bg_color(chime_switch, COL_BAR_BG, LV_PART_MAIN);
     lv_obj_set_style_bg_color(chime_switch, COL_ACCENT,
-                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+                              (lv_style_selector_t)LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(chime_switch, COL_TEXT, LV_PART_KNOB);
     lv_obj_set_ext_click_area(chime_switch, 16);
-    lv_obj_clear_flag(chime_switch, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_gesture_bubble(chime_switch, false);
     lv_obj_add_event_cb(chime_switch, chime_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(settings_container, true);
 }
 
 void ui_settings_refresh(void) {
@@ -598,7 +598,7 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(wifi_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(wifi_container, 0, 0);
     lv_obj_set_style_pad_all(wifi_container, 0, 0);
-    lv_obj_clear_flag(wifi_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(wifi_container, false);
     lv_obj_add_event_cb(wifi_container, global_click_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* lbl_title = lv_label_create(wifi_container);
@@ -635,7 +635,7 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lv_obj_set_style_border_width(btn_zone, 0, 0);
     lv_obj_set_flex_flow(btn_zone, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_zone, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(btn_zone, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(btn_zone, false);
     lv_obj_add_event_cb(btn_zone, wifi_hotspot_click_cb, LV_EVENT_CLICKED, NULL);
 
     lbl_wifi_btn = lv_label_create(btn_zone);
@@ -652,7 +652,7 @@ static void init_wifi_screen(lv_obj_t* scr) {
     lv_label_set_text(lbl_wifi_note, "Configure via serial at 115200 baud");
     lv_obj_set_pos(lbl_wifi_note, L.margin, note_y);
 
-    lv_obj_add_flag(wifi_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(wifi_container, true);
 }
 
 // ======== Bluetooth Screen ========
@@ -664,7 +664,7 @@ static void init_bluetooth_screen(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(ble_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ble_container, 0, 0);
     lv_obj_set_style_pad_all(ble_container, 0, 0);
-    lv_obj_clear_flag(ble_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(ble_container, false);
     lv_obj_add_event_cb(ble_container, global_click_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* lbl_ble_title = lv_label_create(ble_container);
@@ -712,7 +712,7 @@ static void init_bluetooth_screen(lv_obj_t* scr) {
     lv_obj_set_style_pad_column(reset_zone, 14, 0);
     lv_obj_set_flex_flow(reset_zone, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(reset_zone, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(reset_zone, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(reset_zone, false);
     lv_obj_add_event_cb(reset_zone, ble_reset_click_cb, LV_EVENT_CLICKED, NULL);
 
     static lv_image_dsc_t icon_trash_dsc;
@@ -737,7 +737,7 @@ static void init_bluetooth_screen(lv_obj_t* scr) {
     lv_obj_set_style_text_color(lbl_credit2, COL_DIM, 0);
     lv_obj_align(lbl_credit2, LV_ALIGN_BOTTOM_MID, 0, -20);
 
-    lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ble_container, true);
 }
 
 // ======== Public API ========
@@ -796,10 +796,10 @@ void ui_update(const UsageData* data) {
         // Spending box: big number-only label + small "%" symbol + desc
         lv_obj_set_style_text_font(lbl_session_pct, &font_tiempos_56, 0);
         lv_label_set_text(lbl_session_label, "Spending");
-        lv_obj_add_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(lbl_spending_desc,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(lbl_spending_status,   LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(lbl_session_reset, true);
+        lv_obj_set_hidden(lbl_session_pct_sym, false);
+        lv_obj_set_hidden(lbl_spending_desc, false);
+        lv_obj_set_hidden(lbl_spending_status, true);
         style_binding_pill(lbl_session_label, false);
         style_binding_pill(lbl_weekly_label,  false);
 
@@ -809,10 +809,10 @@ void ui_update(const UsageData* data) {
     } else {
         lv_obj_set_style_text_font(lbl_session_pct, &font_styrene_48, 0);
         lv_label_set_text(lbl_session_label, "Current");
-        lv_obj_clear_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(lbl_spending_desc,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(lbl_spending_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(lbl_session_reset, false);
+        lv_obj_set_hidden(lbl_session_pct_sym, true);
+        lv_obj_set_hidden(lbl_spending_desc, true);
+        lv_obj_set_hidden(lbl_spending_status, true);
         style_binding_pill(lbl_session_label, data->session_binding);
         style_binding_pill(lbl_weekly_label,  data->weekly_binding);
 
@@ -864,20 +864,15 @@ static void update_stale_view(void) {
                  (lv_tick_get() - last_data_ms) >= DATA_FRESH_MS;
     if (stale == showing_stale) return;
     showing_stale = stale;
-    if (stale) {
-        lv_obj_add_flag(panels_group, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(stale_group, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(panels_group, LV_OBJ_FLAG_HIDDEN);
-    }
+    lv_obj_set_hidden(panels_group, stale);
+    lv_obj_set_hidden(stale_group, !stale);
 }
 
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
     update_stale_view();
     if (showing_stale) splash_mini_tick();  // animate the sleeping creature
-    if (lv_obj_has_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN)) return;
+    if (lv_obj_is_hidden(lbl_anim)) return;
 
     uint32_t now = lv_tick_get();
 
@@ -907,8 +902,7 @@ void ui_tick_anim(void) {
 static screen_t prev_non_splash_screen = SCREEN_USAGE;
 static void apply_battery_visibility(void) {
     if (!battery_img) return;
-    if (current_screen == SCREEN_SPLASH) lv_obj_add_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
-    else                                  lv_obj_clear_flag(battery_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(battery_img, current_screen == SCREEN_SPLASH);
 }
 
 // ---- Swipe navigation + slide transition ----
@@ -957,7 +951,7 @@ static void slide_anim_x_cb(void* obj, int32_t v) {
 static void slide_done_cb(lv_anim_t* a) {
     (void)a;
     if (slide_out_obj) {
-        lv_obj_add_flag(slide_out_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(slide_out_obj, true);
         lv_obj_set_x(slide_out_obj, 0);
         slide_out_obj = nullptr;
     }
@@ -989,7 +983,7 @@ static void ui_slide_to(screen_t next, int dir) {
 
     slide_out_obj = out;
     lv_obj_set_x(in, dir * L.scr_w);
-    lv_obj_clear_flag(in, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(in, false);
 
     lv_anim_t a;
     lv_anim_init(&a);
@@ -1052,28 +1046,25 @@ bool ui_hotspot_requested(void) {
 
 void ui_show_screen(screen_t screen) {
     slide_abort();
-    lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(wifi_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(usage_container, true);
+    lv_obj_set_hidden(settings_container, true);
+    lv_obj_set_hidden(ble_container, true);
+    lv_obj_set_hidden(wifi_container, true);
     splash_hide();
 
     switch (screen) {
     case SCREEN_SPLASH:     splash_show(); break;
-    case SCREEN_USAGE:      lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN); break;
+    case SCREEN_USAGE:      lv_obj_set_hidden(usage_container, false); break;
     case SCREEN_SETTINGS:
         ui_settings_refresh();  // widgets reflect current state on entry
-        lv_obj_clear_flag(settings_container, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(settings_container, false);
         break;
-    case SCREEN_BLUETOOTH:  lv_obj_clear_flag(ble_container, LV_OBJ_FLAG_HIDDEN); break;
-    case SCREEN_WIFI:       lv_obj_clear_flag(wifi_container, LV_OBJ_FLAG_HIDDEN); break;
+    case SCREEN_BLUETOOTH:  lv_obj_set_hidden(ble_container, false); break;
+    case SCREEN_WIFI:       lv_obj_set_hidden(wifi_container, false); break;
     default: break;
     }
 
-    if (logo_img) {
-        if (screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-        else                          lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (logo_img) lv_obj_set_hidden(logo_img, screen == SCREEN_SPLASH);
 
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
@@ -1098,8 +1089,8 @@ screen_t ui_get_current_screen(void) {
 
 void ui_set_status(ui_status_level_t level, const char* msg) {
     if (!msg || msg[0] == '\0' || level == UI_STATUS_NONE) {
-        lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(lbl_status, true);
+        lv_obj_set_hidden(lbl_anim, false);
         return;
     }
     lv_color_t col;
@@ -1110,8 +1101,8 @@ void ui_set_status(ui_status_level_t level, const char* msg) {
     }
     lv_obj_set_style_text_color(lbl_status, col, 0);
     lv_label_set_text(lbl_status, msg);
-    lv_obj_clear_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(lbl_anim, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lbl_status, false);
+    lv_obj_set_hidden(lbl_anim, true);
 }
 
 void ui_update_wifi_creds(bool portal_active) {

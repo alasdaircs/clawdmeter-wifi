@@ -137,8 +137,8 @@ static void grid_create(GridView *g, lv_obj_t *parent, int cell_px) {
     lv_obj_set_size(g->obj, GRID * cell_px, GRID * cell_px);
     lv_obj_set_style_bg_color(g->obj, rgb565_to_color(COL_EMPTY), 0);
     lv_obj_set_style_bg_opa(g->obj, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(g->obj, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(g->obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(g->obj, false);
+    lv_obj_set_scrollable(g->obj, false);
     lv_obj_add_event_cb(g->obj, grid_draw_cb, LV_EVENT_DRAW_MAIN, g);
 }
 
@@ -215,7 +215,7 @@ void splash_mini_tick(void) {
 static void show_placeholder() {
     // Solid dark background + centered status label.
     render_frame(NULL, NULL);
-    if (label_status) lv_obj_clear_flag(label_status, LV_OBJ_FLAG_HIDDEN);
+    if (label_status) lv_obj_set_hidden(label_status, false);
 }
 
 void splash_init(lv_obj_t *parent) {
@@ -231,7 +231,7 @@ void splash_init(lv_obj_t *parent) {
     lv_obj_set_style_bg_opa(splash_container, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(splash_container, 0, 0);
     lv_obj_set_style_pad_all(splash_container, 0, 0);
-    lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(splash_container, false);
 
     grid_create(&splash_grid, splash_container, cell);
     lv_obj_center(splash_grid.obj);
@@ -252,13 +252,13 @@ void splash_init(lv_obj_t *parent) {
     if (SPLASH_ANIM_COUNT == 0) {
         show_placeholder();
     } else {
-        lv_obj_add_flag(label_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(label_status, true);
         const splash_anim_def_t *a = &splash_anims[0];
         render_frame(a->frames[0], a->palette);
         frame_started_ms = millis();
     }
 
-    lv_obj_add_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(splash_container, true);
 }
 
 void splash_tick(void) {
@@ -314,12 +314,12 @@ bool splash_is_active(void) { return active; }
 
 void splash_show(void) {
     splash_pick_for_current_rate();
-    if (splash_container) lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+    if (splash_container) lv_obj_set_hidden(splash_container, false);
     active = true;
 }
 
 void splash_hide(void) {
-    if (splash_container) lv_obj_add_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+    if (splash_container) lv_obj_set_hidden(splash_container, true);
     active = false;
 }
 
