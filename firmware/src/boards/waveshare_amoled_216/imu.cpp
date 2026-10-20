@@ -2,7 +2,7 @@
 #include "board.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include <SensorQMI8658.hpp>
+#include <ImuDrv.hpp>
 
 // Poll and hysteresis timing
 #define IMU_POLL_MS       100    // ~10 Hz
@@ -32,11 +32,11 @@ void imu_hal_init(void) {
         return;
     }
     Serial.println("QMI8658 init OK");
-    imu.configAccelerometer(
-        SensorQMI8658::ACC_RANGE_4G,
-        SensorQMI8658::ACC_ODR_LOWPOWER_21Hz,
-        SensorQMI8658::LPF_MODE_3);
-    imu.enableAccelerometer();
+    imu.configAccel(
+        SensorQMI8658::AccelRange::FS_4G,
+        SensorQMI8658::AccelODR::ODR_LP_21Hz,
+        SensorQMI8658::LpfMode::MODE_3);
+    imu.enableAccel();
     imu_ok = true;
 }
 
@@ -46,8 +46,12 @@ void imu_hal_tick(void) {
     if (now - last_poll_ms < IMU_POLL_MS) return;
     last_poll_ms = now;
 
-    float ax, ay, az;
-    if (!imu.getAccelerometer(ax, ay, az)) return;
+    // Raw counts × scale = g, which TILT_THRESHOLD is in (readAccel() would
+    // give m/s² and also read the temperature register every poll).
+    int16_t rx, ry, rz;
+    if (!imu.readAccelRaw(rx, ry, rz)) return;
+    const float g_per_lsb = imu.getAccelScale();
+    float ax = rx * g_per_lsb, ay = ry * g_per_lsb;
 
     uint8_t target = accel_to_rotation(ax, ay);
     if (target == 255 || target == current_rotation) {
