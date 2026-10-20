@@ -1,0 +1,111 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [wifi-native]
+  pull_request:
+    branches: [wifi-native]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per ref. A new push to a PR cancels the stale run; pushes to
+# wifi-native queue instead, so every merged commit gets a full result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned so CI doesn't drift when PlatformIO releases. The ESP32 platform
+  # itself is pinned separately (by URL) in firmware/platformio.ini.
+  PLATFORMIO_VERSION: "6.2.0"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # Read the env list (and each env's `board =`) from platformio.ini so a new
+  # board port is picked up by CI automatically — adding an [env:...] block
+  # is all it takes.
+  envs:
+    name: list envs
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: firmware/platformio.ini
+          sparse-checkout-cone-mode: false
+      - id: list
+        run: |
+          matrix=$(awk '
+            /^\[env:/ { sub(/^\[env:/, ""); sub(/\].*/, ""); env = $0 }
+            /^board[ \t]*=/ && env != "" { sub(/^board[ \t]*=[ \t]*/, ""); print env, $0 }
+          ' firmware/platformio.ini | tr -d '\r' |
+            jq -Rsc '{include: split("\n") | map(select(length > 0) | split(" ") | {env: .[0], board: .[1]})}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix" | jq .
+
+  build:
+    name: build ${{ matrix.env }}
+    needs: envs
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every board even when one of them breaks.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.envs.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ~/.platformio holds the pioarduino platform, toolchains and Arduino
+      # libs (~2 GB compressed, the bulk of a cold build). Keyed per board
+      # (MCU), not per env: envs on the same chip download identical
+      # packages, and one copy per chip keeps us well under the 10 GB repo
+      # cache limit. Also keyed on the exact Python version because the
+      # platform builds its own venv (~/.platformio/penv). Download archives
+      # are excluded — the unpacked copies are what's used.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            !~/.platformio/dist
+            !~/.platformio/.cache
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ matrix.board }}-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install "platformio==${PLATFORMIO_VERSION}"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          pio run -d firmware -e "${{ matrix.env }}" 2>&1 | tee build.log
+
+      - name: Size summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.env }}"
+            echo '```'
+            grep -E '^(RAM|Flash):' build.log || echo "(no size report — build did not finish)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # firmware.bin is the app image (flash at 0x10000 over an existing
+      # install). firmware.factory.bin is pioarduino's merged image —
+      # bootloader + partitions + app — flashable at 0x0 on a blank board.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.env }}
+          path: |
+            firmware/.pio/build/${{ matrix.env }}/firmware.bin
+            firmware/.pio/build/${{ matrix.env }}/firmware.factory.bin
+            firmware/.pio/build/${{ matrix.env }}/bootloader.bin
+            firmware/.pio/build/${{ matrix.env }}/partitions.bin
+          if-no-files-found: error
+          retention-days: 14
