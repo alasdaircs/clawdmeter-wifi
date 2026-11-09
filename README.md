@@ -81,8 +81,11 @@ On first boot the device starts a Wi-Fi access point named **ClawdMeter**.
 The token field is optional during setup — you can add it later via serial if you
 prefer not to enter it on a phone browser.
 
-> **Token:** Your OAuth token is in `~/.claude/.credentials.json` on Linux/macOS, or
-> `%APPDATA%\Claude\.credentials.json` on Windows. Look for the `oauthToken` field.
+> **Token:** Run `claude setup-token` on any machine where Claude Code is signed in to
+> your subscription. It walks you through a browser sign-in and prints a long-lived
+> (one-year) token starting `sk-ant-oat01-…`; copy it then, as it isn't saved anywhere.
+> Don't use the `accessToken` from `~/.claude/.credentials.json`: that one expires
+> after a few hours and the device will show "Token invalid".
 
 ### 2a. Provision via serial (alternative)
 

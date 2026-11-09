@@ -228,7 +228,7 @@ static void do_poll() {
     // We stay on /v1/messages (a 1-token dummy message whose rate-limit
     // *response headers* carry the usage figures) rather than the cheaper
     // /api/oauth/usage endpoint: the latter needs an OAuth token with broader
-    // scope than the 1-year `claude setup token` carries, so it 403s on this
+    // scope than the 1-year `claude setup-token` carries, so it 403s on this
     // device. See WIFI_FORK.md "Why not /api/oauth/usage".
     if (!http.begin(tls, "https://" + String(API_HOST) + "/v1/messages")) {
         s_status         = WIFI_POLL_API_ERROR;
