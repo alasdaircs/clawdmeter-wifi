@@ -228,7 +228,7 @@ static void do_poll() {
     // We stay on /v1/messages (a 1-token dummy message whose rate-limit
     // *response headers* carry the usage figures) rather than the cheaper
     // /api/oauth/usage endpoint: the latter needs an OAuth token with broader
-    // scope than the 1-year `claude setup token` carries, so it 403s on this
+    // scope than the 1-year `claude setup-token` carries, so it 403s on this
     // device. See WIFI_FORK.md "Why not /api/oauth/usage".
     if (!http.begin(tls, "https://" + String(API_HOST) + "/v1/messages")) {
         s_status         = WIFI_POLL_API_ERROR;
@@ -262,16 +262,22 @@ static void do_poll() {
 
     if (code == 200) {
         UsageData d = {};
-        if (http.header(POLL_HEADERS[HDR_5H_UTIL]).length() > 0) {
-            // Pro/Max: 5h + 7d windows.
-            d.session_pct        = http.header(POLL_HEADERS[HDR_5H_UTIL]).toFloat() * 100.0f;
-            d.weekly_pct         = http.header(POLL_HEADERS[HDR_7D_UTIL]).toFloat() * 100.0f;
-            d.session_reset_mins = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_5H_RESET]));
+        String s_util = http.header(POLL_HEADERS[HDR_5H_UTIL]);
+        String w_util = http.header(POLL_HEADERS[HDR_7D_UTIL]);
+        if (s_util.length() > 0 || w_util.length() > 0) {
+            // Pro/Max: 7d window, plus the 5h window on plans that still have
+            // one (Anthropic dropped it from some plans in Nov 2026, #10).
+            d.has_session        = s_util.length() > 0;
+            d.session_pct        = d.has_session ? s_util.toFloat() * 100.0f : 0.0f;
+            d.weekly_pct         = w_util.toFloat() * 100.0f;
+            d.session_reset_mins = d.has_session
+                ? unix_to_reset_mins(http.header(POLL_HEADERS[HDR_5H_RESET])) : -1;
             d.weekly_reset_mins  = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_7D_RESET]));
             parse_binding_claim(http.header(POLL_HEADERS[HDR_CLAIM]), &d);
         } else {
             // Enterprise/overage: a single spending-limit window (fe7a7ee).
             d.enterprise         = true;
+            d.has_session        = true;
             d.session_pct        = http.header(POLL_HEADERS[HDR_OV_UTIL]).toFloat() * 100.0f;
             d.session_reset_mins = unix_to_reset_mins(http.header(POLL_HEADERS[HDR_OV_RESET]));
             d.weekly_pct         = 0.0f;
@@ -282,7 +288,7 @@ static void do_poll() {
         d.ok    = true;
         d.valid = true;
         Serial.printf("wifi: %s s=%.1f%% w=%.1f%% status=%s reset=%dm claim=%s\n",
-            d.enterprise ? "ent" : "pro",
+            d.enterprise ? "ent" : d.has_session ? "pro" : "pro-7d",
             d.session_pct, d.weekly_pct, d.status, d.session_reset_mins,
             http.header(POLL_HEADERS[HDR_CLAIM]).c_str());
 
@@ -327,10 +333,17 @@ static void do_poll() {
         UsageData d = s_data;  // preserve last-known weekly/reset as a fallback
         String w = http.header(POLL_HEADERS[HDR_7D_UTIL]);
         if (w.length()) d.weekly_pct = w.toFloat() * 100.0f;
-        String r = http.header(POLL_HEADERS[HDR_5H_RESET]);
+        String su = http.header(POLL_HEADERS[HDR_5H_UTIL]);
+        String r  = http.header(POLL_HEADERS[HDR_5H_RESET]);
+        if (su.length() || r.length()) d.has_session = true;
+        else if (w.length())           d.has_session = false;
+        else if (!d.valid)             d.has_session = true;  // no headers, no history
         if (r.length()) d.session_reset_mins = unix_to_reset_mins(r);
         parse_binding_claim(http.header(POLL_HEADERS[HDR_CLAIM]), &d);
-        d.session_pct = 100.0f;  // window is spent — show the session bar full
+        // The window is spent — show its bar full: the session bar, or the
+        // weekly one when the plan has no 5h window.
+        if (d.has_session) d.session_pct = 100.0f;
+        else             { d.session_pct = 0.0f; d.weekly_pct = 100.0f; }
         strlcpy(d.status, "limited", sizeof(d.status));
         d.ok           = true;
         d.valid        = true;

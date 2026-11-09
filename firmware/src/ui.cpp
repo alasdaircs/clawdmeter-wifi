@@ -807,19 +807,30 @@ void ui_update(const UsageData* data) {
         lv_obj_align_to(lbl_session_pct_sym, lbl_session_pct,
                         LV_ALIGN_OUT_RIGHT_TOP, 4, 12);
     } else {
-        lv_obj_set_style_text_font(lbl_session_pct, &font_styrene_48, 0);
         lv_label_set_text(lbl_session_label, "Current");
-        lv_obj_set_hidden(lbl_session_reset, false);
         lv_obj_set_hidden(lbl_session_pct_sym, true);
         lv_obj_set_hidden(lbl_spending_desc, true);
         lv_obj_set_hidden(lbl_spending_status, true);
         style_binding_pill(lbl_session_label, data->session_binding);
         style_binding_pill(lbl_weekly_label,  data->weekly_binding);
 
-        lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
-        format_reset_time(data->session_reset_mins, buf, sizeof(buf));
-        lv_label_set_text(lbl_session_reset, buf);
+        if (data->has_session) {
+            lv_obj_set_style_text_font(lbl_session_pct, &font_styrene_48, 0);
+            lv_obj_set_hidden(lbl_session_reset, false);
+            lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
+            format_reset_time(data->session_reset_mins, buf, sizeof(buf));
+            lv_label_set_text(lbl_session_reset, buf);
+        } else {
+            // Plan has no 5h window (#10): say so; the bar stays empty. 24px
+            // so it clears the "Current" pill on the 368-wide 1.8.
+            lv_obj_set_style_text_font(lbl_session_pct, &font_styrene_24, 0);
+            lv_obj_set_hidden(lbl_session_reset, true);
+            lv_label_set_text(lbl_session_pct, "No 5h limit");
+        }
     }
+    bool session_shown = data->enterprise || data->has_session;
+    lv_obj_set_style_text_color(lbl_session_pct, session_shown ? COL_TEXT : COL_DIM, 0);
+    lv_obj_set_y(lbl_session_pct, session_shown ? 0 : 8);  // centre on the pill
 
     lv_bar_set_value(bar_session, s_pct, LV_ANIM_ON);
     lv_obj_set_style_bg_color(bar_session, pct_color(data->session_pct), LV_PART_INDICATOR);

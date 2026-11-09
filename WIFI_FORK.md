@@ -90,13 +90,13 @@ Content-Type: application/json
 
 | Header | Use |
 |---|---|
-| `anthropic-ratelimit-unified-5h-utilization` | Session % (0.0–1.0); presence ⇒ Pro/Max account |
+| `anthropic-ratelimit-unified-5h-utilization` | Session % (0.0–1.0); absent on plans with no 5h window (Nov 2026) — the Current panel then reads "No 5h limit" |
 | `anthropic-ratelimit-unified-7d-utilization` | Weekly % (0.0–1.0) |
 | `anthropic-ratelimit-unified-status` | `allowed` / `throttled` / `exceeded` |
 | `anthropic-ratelimit-unified-representative-claim` | Binding window (`five_hour` / `seven_day`…) — drives the terracotta pill highlight |
 | `anthropic-ratelimit-unified-5h-reset` | Unix timestamp of next 5h reset |
 | `anthropic-ratelimit-unified-7d-reset` | Unix timestamp of next weekly reset |
-| `anthropic-ratelimit-unified-overage-utilization` | Enterprise spending % — absence of the 5h header ⇒ Enterprise account (upstream fe7a7ee; billing-period math runs on-device using SNTP time) |
+| `anthropic-ratelimit-unified-overage-utilization` | Enterprise spending % — absence of both the 5h and 7d utilization headers ⇒ Enterprise account (upstream fe7a7ee; billing-period math runs on-device using SNTP time) |
 | `anthropic-ratelimit-unified-overage-reset` | Enterprise billing-period end (Unix timestamp) |
 
 **Important:** `Authorization: Bearer` works. `X-Api-Key` returns HTTP 401.
@@ -112,7 +112,7 @@ Upstream [PR #39](https://github.com/HermannBjorgvin/Clawdmeter/pull/39) switche
 **daemon** to `GET /api/oauth/usage` — the zero-token endpoint behind `claude /usage`.
 That's a clear win for the daemon, but **it can't be used on this device.** That endpoint
 requires an OAuth token with broad scope (`user:profile`, `user:sessions:claude_code`, …).
-The device is provisioned with the 1-year token from `claude setup token`, which carries
+The device is provisioned with the 1-year token from `claude setup-token`, which carries
 only inference scope — enough for `/v1/messages` but it returns **HTTP 403** on
 `/api/oauth/usage`. The short-lived `claudeAiOauth` access token *does* have the scope,
 but it expires in ~8 h and the device has no on-device refresh path, so it's not viable
@@ -120,7 +120,7 @@ for an always-on gauge. Verified empirically:
 
 | Token | `/api/oauth/usage` |
 |---|---|
-| `claude setup token` (1-year, inference scope) | **403 Forbidden** |
+| `claude setup-token` (1-year, inference scope) | **403 Forbidden** |
 | `claudeAiOauth` access token (full scope, ~8 h) | 200 OK |
 | invalid/garbage token | 401 (so 403 ≠ expiry — it's scope) |
 
@@ -251,7 +251,7 @@ After **three consecutive connection timeouts** `wifi_poller` reports fail count
 
 ### Known limitation: token lifetime
 
-The device is provisioned with the **1-year token from `claude setup token`** — long-lived
+The device is provisioned with the **1-year token from `claude setup-token`** — long-lived
 by design, so unlike the host daemon it doesn't need to track short-lived OAuth refresh.
 The trade-off is scope: that token can't reach `/api/oauth/usage` (see "Why not" above).
 
