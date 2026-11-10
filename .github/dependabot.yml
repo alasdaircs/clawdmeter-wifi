@@ -1,0 +1,13 @@
+# Dependabot keeps the GitHub Actions in .github/workflows current: one grouped
+# pull request a week. It has no PlatformIO ecosystem, so the firmware's
+# libraries and platform are a manual check (README, "Updating dependencies").
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"

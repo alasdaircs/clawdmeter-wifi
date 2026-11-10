@@ -151,6 +151,33 @@ The serial interface (115200 baud) is always available for inspection and re-pro
 | `clear` | Wipe all NVS keys (triggers hotspot on next reboot) |
 | `screenshot` | Dump LVGL framebuffer as raw RGB565 over serial |
 
+## Updating dependencies
+
+Dependabot raises one grouped pull request a week for the GitHub Actions in
+`.github/workflows/`. It doesn't understand PlatformIO, so the firmware's own
+dependencies are a manual check, every month or so:
+
+1. **Libraries** (`lib_deps` in `firmware/platformio.ini`). For each env:
+
+   ```bash
+   pio pkg outdated -d firmware -e waveshare_amoled_216
+   pio pkg outdated -d firmware -e waveshare_amoled_18
+   pio pkg outdated -d firmware -e waveshare_amoled_216_c6
+   ```
+
+   Updates within each `^` range arrive on their own at the next clean build; a
+   new major (or, below 1.0, minor) version needs the range raised by hand, in
+   all three envs.
+2. **Platform.** The pioarduino platform is pinned by release URL (`platform =`
+   in each env), which `pio pkg outdated` can't see. Compare it with the latest
+   [pioarduino release](https://github.com/pioarduino/platform-espressif32/releases).
+3. **PlatformIO itself.** CI pins `PLATFORMIO_VERSION` in
+   `.github/workflows/build.yml`; compare it with `pip index versions platformio`.
+
+Make the change on a branch and open a pull request: CI builds every env, but
+it can't test on hardware, so flash a board before merging anything beyond a
+patch release.
+
 ## Recompiling fonts
 
 The `firmware/src/font_*.c` files are pre-compiled LVGL bitmap fonts.
